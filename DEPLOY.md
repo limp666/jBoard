@@ -23,7 +23,7 @@
 4. 다음 정보를 입력합니다:
    - **Repository**: 방금 업로드한 GitHub 저장소 선택
    - **Branch**: `main` (또는 업로드한 브랜치명)
-   - **Main file path**: `대시_보드.py` (파일명이 변경되었으므로 정확히 입력해야 합니다)
+   - **Main file path**: `app.py`
 5. **"Deploy!"** 버튼을 클릭합니다.
 
 ### 단계 3: 배포 완료

@@ -19,7 +19,7 @@ python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-streamlit run 대시_보드.py
+streamlit run app.py
 ```
 
 브라우저에서 표시되는 주소(기본: http://localhost:8501)를 열어 대시보드를 확인하세요.

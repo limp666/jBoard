@@ -130,23 +130,32 @@ def get_news(tickers: Iterable[str], limit: int = 10) -> List[Dict[str, Any]]:
     all_news = []
     seen_links = set()
     
-    # If no tickers, default to SPY for general market news
-    target_tickers = list(tickers) if tickers else ["SPY"]
+    # If no tickers, default to SPY/QQQ for general market news
+    target_tickers = list(tickers) if tickers else ["SPY", "QQQ"]
     
-    # Limit to first 3 tickers to avoid too many requests if list is long
-    for ticker in target_tickers[:3]:
+    # Limit to first 5 tickers to balance speed and variety
+    # If we have very few results, we might want to try more, but start with 5.
+    search_tickers = target_tickers[:5]
+    
+    for ticker in search_tickers:
         try:
             yf_ticker = yf.Ticker(ticker)
             news_items = yf_ticker.news
             
             for item in news_items:
-                # Handle nested 'content' structure if present (common in newer yfinance versions)
+                # Handle nested 'content' structure
                 data = item.get("content", item)
                 
-                # Extract fields with fallbacks
                 title = data.get("title")
+                if not title:
+                    continue
+                    
+                # Deduplication by title
+                if title in seen_links:
+                    continue
+                seen_links.add(title)
                 
-                # URL can be in 'clickThroughUrl' -> 'url' or top level 'link'
+                # URL extraction
                 url = data.get("link")
                 if not url and "clickThroughUrl" in data:
                     url = data["clickThroughUrl"].get("url")
@@ -159,42 +168,57 @@ def get_news(tickers: Iterable[str], limit: int = 10) -> List[Dict[str, Any]]:
                     site = data["provider"].get("displayName")
                     
                 # Date
-                pub_date = data.get("providerPublishTime") # Timestamp
+                pub_date = data.get("providerPublishTime")
                 if not pub_date and "pubDate" in data:
-                    pub_date = data["pubDate"] # ISO string
-                    
+                    pub_date = data["pubDate"]
+                
                 # Summary
                 summary = data.get("summary") or data.get("description")
-                if not summary and "relatedTickers" in data:
-                    summary = f"Related: {', '.join(data['relatedTickers'])}"
                 
                 # Thumbnail
                 thumbnail_url = None
                 if "thumbnail" in data:
                     thumbs = data["thumbnail"].get("resolutions")
                     if thumbs and isinstance(thumbs, list) and len(thumbs) > 0:
-                        # Try to find a reasonable size, or just take the first/last
-                        thumbnail_url = thumbs[-1].get("url") # Usually the largest or original
+                        thumbnail_url = thumbs[-1].get("url")
                     elif "originalUrl" in data["thumbnail"]:
                         thumbnail_url = data["thumbnail"]["originalUrl"]
 
-                # Skip if no title or url
-                if not title:
-                    continue
-
-                # Format to match app expectation
                 all_news.append({
                     "symbol": ticker,
                     "title": title,
                     "url": url,
                     "site": site or "Yahoo Finance",
-                    "publishedDate": pd.to_datetime(pub_date),
+                    "publishedDate": pd.to_datetime(pub_date) if pub_date else pd.Timestamp.now(),
                     "summary": summary or "",
                     "thumbnail": thumbnail_url
                 })
         except Exception:
             continue
             
+    # Fallback: If no news found, try Market Indices
+    if not all_news:
+        try:
+            for idx in ["^GSPC", "^IXIC"]:
+                idx_ticker = yf.Ticker(idx)
+                for item in idx_ticker.news:
+                    data = item.get("content", item)
+                    title = data.get("title")
+                    if title and title not in seen_links:
+                        seen_links.add(title)
+                        # ... (Simplified extraction for fallback)
+                        all_news.append({
+                            "symbol": idx,
+                            "title": title,
+                            "url": data.get("link"),
+                            "site": "Market News",
+                            "publishedDate": pd.Timestamp.now(), # Approximate
+                            "summary": data.get("summary", ""),
+                            "thumbnail": None
+                        })
+        except Exception:
+            pass
+
     # Sort by date desc
     all_news.sort(key=lambda x: x["publishedDate"], reverse=True)
     return all_news[:limit]

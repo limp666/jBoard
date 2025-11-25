@@ -7,11 +7,15 @@ from services import yfinance_client
 st.set_page_config(page_title="종목 분석", page_icon="📈", layout="wide")
 
 def calculate_technicals(df: pd.DataFrame) -> pd.DataFrame:
-    """Calculate SMA 20, SMA 60, RSI 14, and Volume MA 20."""
+    """Calculate SMA, RSI, Volume MA, Slopes, Candle patterns, and Highs."""
     df = df.copy()
     # SMA
     df["SMA_20"] = df["Close"].rolling(window=20).mean()
     df["SMA_60"] = df["Close"].rolling(window=60).mean()
+    
+    # Slopes (Change in SMA over 1 day)
+    df["Slope_20"] = df["SMA_20"].diff()
+    df["Slope_60"] = df["SMA_60"].diff()
     
     # Volume MA
     df["Vol_MA_20"] = df["Volume"].rolling(window=20).mean()
@@ -23,97 +27,164 @@ def calculate_technicals(df: pd.DataFrame) -> pd.DataFrame:
     rs = gain / loss
     df["RSI"] = 100 - (100 / (1 + rs))
     
+    # Candle Patterns
+    # Upper Shadow: High - max(Open, Close)
+    # Body: abs(Open - Close)
+    df["Upper_Shadow"] = df["High"] - df[["Open", "Close"]].max(axis=1)
+    df["Body"] = (df["Open"] - df["Close"]).abs()
+    
+    # Breakout (20-day High)
+    df["High_20"] = df["High"].rolling(window=20).max()
+    
     return df
 
 def analyze_buy_timing(df: pd.DataFrame, current_price: float) -> dict:
     """
-    Analyze buy timing based on User's Custom Strategy.
-    
-    Buy Conditions:
-    1. MA20 > MA60 (Up Trend)
-    2. Price > MA20 (Momentum)
-    3. RSI < 65 (Not Overbought)
-    4. Volume > 1.2 * Vol_MA20 (Volume Spike)
-    
-    Position Size:
-    - (MA20 - MA60) / MA60 * 100 (%)
-    
-    Sell Conditions:
-    - MA20 < MA60 OR RSI > 70 OR Price < MA20
+    Advanced Analysis with Mandatory vs Bonus Conditions.
     """
     if len(df) < 60:
         return {"status": "데이터 부족", "color": "gray", "message": "분석을 위한 데이터가 충분하지 않습니다."}
     
-    last_row = df.iloc[-1]
-    sma_20 = last_row["SMA_20"]
-    sma_60 = last_row["SMA_60"]
-    rsi = last_row["RSI"]
-    vol = last_row["Volume"]
-    vol_ma_20 = last_row["Vol_MA_20"]
+    # Get last 3 rows
+    recent = df.iloc[-3:]
+    last = recent.iloc[-1]
     
-    # Conditions
-    cond_trend_up = sma_20 > sma_60
-    cond_price_above_ma20 = current_price > sma_20
-    cond_rsi_safe = rsi < 65
-    cond_vol_spike = vol > (vol_ma_20 * 1.2)
+    sma_20 = last["SMA_20"]
+    sma_60 = last["SMA_60"]
+    slope_20 = last["Slope_20"]
+    slope_60 = last["Slope_60"]
+    rsi = last["RSI"]
+    vol = last["Volume"]
+    vol_ma_20 = last["Vol_MA_20"]
+    high_20 = last["High_20"]
     
-    cond_rsi_overbought = rsi > 70
-    cond_trend_down = sma_20 < sma_60
-    cond_price_below_ma20 = current_price < sma_20
+    # --- 1. Conditions ---
     
-    # Position Sizing Calculation
-    # (MA20 - MA60) / MA60 * 100
-    position_pct = 0.0
+    # Mandatory (Essential)
+    cond_trend = sma_20 > sma_60
+    cond_price = current_price >= sma_20
+    cond_rsi = rsi <= 65
+    
+    # Bonus (Preferred)
+    cond_vol = vol >= (vol_ma_20 * 1.5) # Increased to 1.5x
+    cond_breakout = current_price >= high_20 # Near 20-day high
+    
+    # --- 2. Sell Logic (Tiered) ---
+    sell_reasons = []
+    sell_level = 0 # 0: None, 1: Warning, 2: Exit
+    
+    # Tier 1: Warning
+    if rsi >= 70:
+        sell_reasons.append("RSI 과열(≥70)")
+        sell_level = max(sell_level, 1)
+    
+    # Vol Spike + Long Upper Shadow (Shooting Star-ish)
+    # Condition: Upper Shadow > 2 * Body AND Volume Spike
+    if cond_vol and (last["Upper_Shadow"] > 2 * last["Body"]) and (last["Body"] > 0):
+        sell_reasons.append("거래량 급증 + 윗꼬리")
+        sell_level = max(sell_level, 1)
+        
+    if current_price < sma_20:
+        sell_reasons.append("종가 MA20 이탈")
+        sell_level = max(sell_level, 1)
+
+    # Tier 2: Exit
+    # Death Cross with Downward Slopes
+    if (sma_20 <= sma_60) and (slope_20 < 0) and (slope_60 < 0):
+        sell_reasons.append("역배열 확정")
+        sell_level = 2
+        
+    # 3 days below MA20 (Failure to Reclaim)
+    days_below_ma20 = (recent["Close"] < recent["SMA_20"]).sum()
+    if days_below_ma20 == 3:
+        sell_reasons.append("3일 연속 MA20 하회")
+        sell_level = 2
+        
+    # RSI Breakdown (High -> Low) - Simplified: RSI < 50 while Price < MA20
+    if rsi < 50 and current_price < sma_20:
+        sell_reasons.append("RSI 50 이탈")
+        sell_level = 2
+
+    # --- 3. Position Sizing ---
+    # Base: Trend Strength * K
+    trend_strength = 0.0
     if sma_60 > 0:
-        position_pct = ((sma_20 - sma_60) / sma_60) * 100
+        trend_strength = (sma_20 - sma_60) / sma_60
+        
+    # Formula: min(100, max(0, Trend * K))
+    # K = 2000 (Trend 0.05 -> 100%)
+    K = 2000
+    base_weight = min(100, max(0, trend_strength * K))
     
-    # Logic
+    # Bonus Boost
+    if cond_vol: base_weight += 10
+    if cond_breakout: base_weight += 10
+    
+    # Penalties
+    if rsi >= 60: base_weight -= 30 # Reduce exposure if getting hot
+    if rsi >= 70: base_weight = 0 # No new entry allowed
+        
+    rec_weight = min(100, max(0, base_weight))
+    
+    # --- 4. Risk Level ---
+    risk_score = 0
+    if rsi > 60: risk_score += 1
+    if rsi > 70: risk_score += 2
+    if not cond_price: risk_score += 1
+    if trend_strength < 0: risk_score += 2
+    
+    risk_label = "보통"
+    risk_color = "green"
+    if risk_score >= 2:
+        risk_label = "높음"
+        risk_color = "orange"
+    if risk_score >= 4:
+        risk_label = "매우 높음"
+        risk_color = "red"
+
+    # --- 5. Result ---
     result = {
         "sma_20": sma_20,
         "sma_60": sma_60,
         "rsi": rsi,
         "vol_ratio": vol / vol_ma_20 if vol_ma_20 > 0 else 0,
-        "position_pct": max(0, position_pct), # Ensure non-negative
-        "checks": {
-            "MA20 > MA60 (추세)": cond_trend_up,
-            "주가 > MA20 (모멘텀)": cond_price_above_ma20,
-            "RSI < 65 (건전)": cond_rsi_safe,
-            "거래량 > 1.2배 (수급)": cond_vol_spike
+        "trend_strength": trend_strength,
+        "rec_weight": rec_weight,
+        "risk_label": risk_label,
+        "risk_color": risk_color,
+        "mandatory": {
+            "추세 정배열 (MA20 > MA60)": cond_trend,
+            "가격 모멘텀 (종가 ≥ MA20)": cond_price,
+            "RSI 건전 (RSI ≤ 65)": cond_rsi,
+        },
+        "bonus": {
+            "수급 폭발 (Vol ≥ 1.5배)": cond_vol,
+            "전고점 돌파 (20일 신고가)": cond_breakout
         }
     }
     
-    # Sell Signal Check First
-    if cond_trend_down or cond_rsi_overbought or cond_price_below_ma20:
-        reasons = []
-        if cond_trend_down: reasons.append("역배열 (MA20 < MA60)")
-        if cond_rsi_overbought: reasons.append("과열 (RSI > 70)")
-        if cond_price_below_ma20: reasons.append("추세 이탈 (주가 < MA20)")
-        
-        result["status"] = "매도 / 관망 (Sell)"
+    # Status Determination
+    if sell_level == 2:
+        result["status"] = "최종 청산 (Exit)"
         result["color"] = "red"
-        result["message"] = f"매도 조건이 발생했습니다: {', '.join(reasons)}. 신규 진입을 자제하고 리스크를 관리하세요."
-        return result
-
-    # Buy Signal Check
-    if cond_trend_up and cond_price_above_ma20 and cond_rsi_safe and cond_vol_spike:
+        result["message"] = f"⛔ **전량 매도 권장**: {', '.join(sell_reasons)}"
+    elif sell_level == 1:
+        result["status"] = "경고 / 비중 축소 (Warning)"
+        result["color"] = "orange"
+        result["message"] = f"⚠️ **부분 매도(30~50%) 권장**: {', '.join(sell_reasons)}"
+    elif all(result["mandatory"].values()):
         result["status"] = "매수 (Buy)"
         result["color"] = "green"
-        result["message"] = (
-            f"모든 매수 조건이 충족되었습니다! 강력한 상승 모멘텀이 확인됩니다.\n"
-            f"**추천 비중: {result['position_pct']:.1f}%** (추세 강도 기반)"
-        )
-        return result
+        msg = "✅ **필수 조건 모두 충족**: 강력한 매수 신호입니다."
+        if any(result["bonus"].values()):
+            msg += f"\n🔥 **우대 조건 충족**: 추가 상승 모멘텀이 확인됩니다."
+        result["message"] = msg
+    else:
+        result["status"] = "관망 (Wait)"
+        result["color"] = "gray"
+        failed = [k for k, v in result["mandatory"].items() if not v]
+        result["message"] = f"필수 조건 미충족: {', '.join(failed)}"
         
-    # Mixed / Hold
-    result["status"] = "보유 / 대기 (Hold)"
-    result["color"] = "orange"
-    
-    failed_conds = [k for k, v in result["checks"].items() if not v]
-    result["message"] = (
-        f"상승 추세이나 일부 조건이 미충족되었습니다.\n"
-        f"미충족 조건: {', '.join(failed_conds)}\n"
-        "조건이 완성될 때까지 기다리거나 소량만 접근하세요."
-    )
     return result
 
 def render_chart(df: pd.DataFrame, ticker: str):
@@ -193,30 +264,47 @@ def main():
             st.divider()
             
             # Trading Plan Card
-            st.markdown(f"### 🧠 AI 매수 타이밍 분석")
+            st.markdown(f"### 🧠 AI 정밀 분석")
             with st.container(border=True):
-                st.markdown(f"**판단**: :{analysis['color']}[**{analysis['status']}**]")
+                # Top Row: Status & Risk
+                c1, c2 = st.columns([2, 1])
+                c1.markdown(f"**판단**: :{analysis['color']}[**{analysis['status']}**]")
+                c2.markdown(f"**리스크**: :{analysis['risk_color']}[{analysis['risk_label']}]")
+                
                 st.info(analysis['message'], icon="💡")
                 
-                if analysis['status'] == "매수 (Buy)":
-                     st.success(f"💰 **추천 비중**: 자산의 **{analysis['position_pct']:.1f}%** (추세 강도: {analysis['position_pct']:.1f})")
+                # Middle Row: Metrics
+                st.markdown("#### 📊 핵심 지표")
+                m1, m2, m3 = st.columns(3)
+                m1.metric("추세 강도", f"{analysis['trend_strength']*100:.2f}%")
+                m2.metric("권장 비중", f"{analysis['rec_weight']:.0f}%")
+                m3.metric("RSI (14)", f"{analysis['rsi']:.1f}")
                 
-                st.markdown("#### 📋 조건 체크리스트")
-                check_cols = st.columns(4)
-                checks = analysis.get("checks", {})
+                # Bottom Row: Checklist
+                st.markdown("#### ✅ 조건 체크리스트")
+                
+                # Mandatory
+                st.caption("필수 조건 (Mandatory)")
+                check_cols_m = st.columns(3)
                 idx = 0
-                for cond, met in checks.items():
+                for cond, met in analysis["mandatory"].items():
                     icon = "✅" if met else "❌"
-                    check_cols[idx % 4].markdown(f"{icon} {cond}")
+                    text = cond if met else f":grey[{cond}]"
+                    check_cols_m[idx % 3].markdown(f"{icon} {text}")
+                    idx += 1
+                    
+                # Bonus
+                st.caption("우대 조건 (Bonus)")
+                check_cols_b = st.columns(2)
+                idx = 0
+                for cond, met in analysis["bonus"].items():
+                    icon = "🔥" if met else "⚪"
+                    text = cond if met else f":grey[{cond}]"
+                    check_cols_b[idx % 2].markdown(f"{icon} {text}")
                     idx += 1
                 
                 st.divider()
-                st.markdown("#### 📊 주요 지표")
-                kpi_cols = st.columns(4)
-                kpi_cols[0].metric("SMA 20", f"${analysis['sma_20']:.2f}")
-                kpi_cols[1].metric("SMA 60", f"${analysis['sma_60']:.2f}")
-                kpi_cols[2].metric("RSI (14)", f"{analysis['rsi']:.1f}")
-                kpi_cols[3].metric("거래량 비율", f"{analysis['vol_ratio']:.1f}배")
+                st.caption("※ 권장 비중은 추세 강도와 RSI 과열도를 반영한 알고리즘 산출값입니다.")
 
             # Chart
             render_chart(df, ticker)

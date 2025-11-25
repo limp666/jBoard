@@ -71,6 +71,16 @@ def calculate_dca(df, monthly_amount):
     
     return df, total_shares
 
+def get_exchange_rate():
+    """Fetch current USD/KRW exchange rate."""
+    try:
+        ticker = yf.Ticker("KRW=X")
+        # Get fast info or history
+        price = ticker.history(period="1d")["Close"].iloc[-1]
+        return price
+    except:
+        return 1400.0 # Fallback
+
 def main():
     st.title("💰 수익률 시뮬레이션 (백테스트)")
     st.markdown("과거 시점에 투자했다면 현재 얼마가 되었을지 시뮬레이션해 보세요.")
@@ -97,8 +107,9 @@ def main():
 
     # --- Main Logic ---
     if run_btn and ticker:
-        with st.spinner("데이터 분석 중..."):
+        with st.spinner("데이터 분석 및 환율 조회 중..."):
             df = fetch_data(ticker, start_date)
+            exchange_rate = get_exchange_rate()
             
             if df is None or df.empty:
                 st.error("데이터가 없습니다. 날짜나 티커를 확인해주세요.")
@@ -112,20 +123,27 @@ def main():
                 result_df, final_shares = calculate_dca(df, amount)
                 mode = "DCA"
                 
-            # Final Metrics
+            # Final Metrics (USD)
             final_value = result_df["Portfolio_Value"].iloc[-1]
             total_invested = result_df["Invested_Capital"].iloc[-1]
             profit = final_value - total_invested
             roi = (profit / total_invested) * 100 if total_invested > 0 else 0
             
+            # Final Metrics (KRW)
+            final_value_krw = final_value * exchange_rate
+            total_invested_krw = total_invested * exchange_rate
+            profit_krw = profit * exchange_rate
+            
             # --- Display Results ---
             
             # 1. Summary Metrics
             st.subheader("📊 시뮬레이션 결과")
+            st.caption(f"적용 환율: 1 USD = {exchange_rate:,.2f} KRW (실시간)")
+            
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("총 투자 원금", f"${total_invested:,.0f}")
-            c2.metric("최종 평가금액", f"${final_value:,.0f}")
-            c3.metric("수익금", f"${profit:,.0f}", delta_color="normal" if profit > 0 else "inverse")
+            c1.metric("총 투자 원금", f"${total_invested:,.0f}", f"{total_invested_krw/10000:,.0f}만원")
+            c2.metric("최종 평가금액", f"${final_value:,.0f}", f"{final_value_krw/10000:,.0f}만원")
+            c3.metric("수익금", f"${profit:,.0f}", f"{profit_krw/10000:,.0f}만원", delta_color="normal" if profit > 0 else "inverse")
             c4.metric("수익률 (ROI)", f"{roi:,.2f}%", delta=f"{roi:,.2f}%")
             
             # 2. Chart
@@ -137,7 +155,7 @@ def main():
                 x=result_df.index, 
                 y=result_df["Portfolio_Value"],
                 mode='lines',
-                name='평가 금액',
+                name='평가 금액 ($)',
                 line=dict(color='#00CC96', width=2),
                 fill='tozeroy', # Fill area below
                 fillcolor='rgba(0, 204, 150, 0.1)'
@@ -148,7 +166,7 @@ def main():
                 x=result_df.index, 
                 y=result_df["Invested_Capital"],
                 mode='lines',
-                name='투자 원금',
+                name='투자 원금 ($)',
                 line=dict(color='#EF553B', width=2, dash='dash')
             ))
             

@@ -101,10 +101,18 @@ def _load_market_overview() -> Tuple[pd.DataFrame, str]:
         data = [item for item in sample_data.MARKET_INDICES if item["symbol"] in indices]
         source = "sample"
     df = pd.DataFrame(data)
+    
+    # Handle empty case or missing columns
+    if df.empty:
+        return df, source
+        
     if "changesPercentage" in df.columns:
         df["change_pct"] = df["changesPercentage"].apply(_normalize_change)
-    else:
+    elif "change" in df.columns:
         df["change_pct"] = df["change"].apply(_normalize_change)
+    else:
+        df["change_pct"] = 0.0
+        
     return df, source
 
 

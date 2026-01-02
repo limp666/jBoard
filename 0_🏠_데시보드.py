@@ -55,6 +55,8 @@ def _fetch_news(tickers: Iterable[str], limit: int):
 def _load_sector_performance() -> Tuple[pd.DataFrame, str]:
     try:
         data = _fetch_sector_performance()
+        if not data:  # Raise exception if empty to trigger fallback
+            raise ValueError("No sector performance data returned from API")
         source = "live"
     except Exception as exc:  # noqa: BLE001
         st.warning(
@@ -77,6 +79,8 @@ def _load_sector_performance() -> Tuple[pd.DataFrame, str]:
 def _load_sector_etfs() -> Tuple[pd.DataFrame, str]:
     try:
         data = _fetch_sector_etf_quotes()
+        if not data:  # Raise exception if empty to trigger fallback
+            raise ValueError("No sector ETF data returned from API")
         source = "live"
     except Exception as exc:  # noqa: BLE001
         st.warning(
@@ -93,6 +97,8 @@ def _load_market_overview() -> Tuple[pd.DataFrame, str]:
     indices = ["^GSPC", "^DJI", "^IXIC"]
     try:
         data = _fetch_market_indices(indices)
+        if not data:  # Raise exception if empty to trigger fallback
+            raise ValueError("No market index data returned from API")
         source = "live"
     except Exception as exc:  # noqa: BLE001
         st.warning(
@@ -252,7 +258,7 @@ def render_news_section(selected_tickers: List[str], limit: int):
             thumbnail = row.get("thumbnail")
             with col1:
                 if thumbnail:
-                    st.image(thumbnail, use_container_width=True)
+                    st.image(thumbnail, use_column_width=True)
                 else:
                     # Placeholder or empty
                     st.write("🖼️")

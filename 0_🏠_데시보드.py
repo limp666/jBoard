@@ -1,4 +1,5 @@
 import os
+# Force Deploy Update: Fixed KeyError issue
 from typing import Iterable, List, Tuple
 
 import pandas as pd
@@ -245,7 +246,7 @@ def render_news_section(selected_tickers: List[str], limit: int):
             thumbnail = row.get("thumbnail")
             with col1:
                 if thumbnail:
-                    st.image(thumbnail, use_column_width=True)
+                    st.image(thumbnail, use_container_width=True)
                 else:
                     # Placeholder or empty
                     st.write("🖼️")

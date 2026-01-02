@@ -30,7 +30,8 @@ def get_sector_performance() -> List[Dict[str, Any]]:
     Return the latest sector performance based on Sector ETF changes.
     """
     tickers = list(SECTOR_ETF_MAP.values())
-    data = yf.download(tickers, period="1d", progress=False)
+    # threads=False to avoid 'database is locked' errors in Streamlit Cloud
+    data = yf.download(tickers, period="1d", progress=False, threads=False)
     
     # yfinance returns a MultiIndex DataFrame if multiple tickers.
     # We want the percent change of the 'Close' price vs 'Open' or previous close.

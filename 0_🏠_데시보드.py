@@ -182,7 +182,7 @@ def render_sector_performance():
         height=460,
     )
     fig.update_layout(coloraxis_showscale=False, plot_bgcolor="rgba(0,0,0,0)")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     top_gainers = display_df.nlargest(3, "change_pct")[["sector", "change_pct"]]
     laggards = display_df.nsmallest(3, "change_pct")[["sector", "change_pct"]]
@@ -200,7 +200,7 @@ def render_sector_performance():
     st.markdown("**전체 데이터**")
     st.dataframe(
         display_df.set_index("sector")[["change_pct"]],
-        use_container_width=True,
+        width='stretch',
         height=350,
     )
 
@@ -231,7 +231,7 @@ def render_sector_etfs():
             "volume": "거래량",
         }
     )
-    st.dataframe(formatted_df, use_container_width=True, height=320)
+    st.dataframe(formatted_df, width='stretch', height=320)
     if source == "sample":
         st.caption("샘플 데이터가 사용되었습니다.")
 
@@ -258,7 +258,7 @@ def render_news_section(selected_tickers: List[str], limit: int):
             thumbnail = row.get("thumbnail")
             with col1:
                 if thumbnail:
-                    st.image(thumbnail, use_column_width=True)
+                    st.image(thumbnail, width='stretch')
                 else:
                     # Placeholder or empty
                     st.write("🖼️")

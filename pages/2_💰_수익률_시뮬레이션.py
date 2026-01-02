@@ -334,7 +334,7 @@ def main():
             fig.update_yaxes(title_text="금액 ($)", row=1, col=1)
             fig.update_yaxes(title_text="주가 ($)", row=2, col=1)
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             
             # 3. Data Table (Optional)
             

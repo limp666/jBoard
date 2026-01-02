@@ -141,6 +141,12 @@ def _sector_to_ticker(sector_name: str) -> str:
 def render_market_overview():
     st.subheader("📊 지수 및 섹터 현황")
     market_df, _ = _load_market_overview()
+    
+    # Handle empty DataFrame
+    if market_df.empty:
+        st.info("표시할 지수 데이터가 없습니다.")
+        return
+    
     cols = st.columns(len(market_df))
     for col, (_, row) in zip(cols, market_df.iterrows()):
         col.metric(

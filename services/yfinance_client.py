@@ -30,19 +30,28 @@ def get_sector_performance() -> List[Dict[str, Any]]:
     Return the latest sector performance based on Sector ETF changes.
     """
     tickers = list(SECTOR_ETF_MAP.values())
+    # threads=False to avoid 'database is locked' errors in Streamlit Cloud
+    data = yf.download(tickers, period="1d", progress=False, threads=False)
+    
+    # yfinance returns a MultiIndex DataFrame if multiple tickers.
+    # We want the percent change of the 'Close' price vs 'Open' or previous close.
+    # Actually, for "1d" period, we can calculate change from the latest data.
+    # Or simpler: use Ticker object info for real-time-ish change.
+    
+    # Using Tickers object is often cleaner for current stats
     result = []
+    tickers_obj = yf.Tickers(" ".join(tickers))
     
     for ticker in tickers:
         try:
-            stock = yf.Ticker(ticker)
-            info = stock.info
-            
+            info = tickers_obj.tickers[ticker].info
             # Calculate change %
+            # currentPrice (or regularMarketPrice) vs previousClose
             current = info.get("currentPrice") or info.get("regularMarketPrice")
             prev_close = info.get("previousClose")
             
             change_pct = 0.0
-            if current and prev_close and prev_close != 0:
+            if current and prev_close:
                 change_pct = ((current - prev_close) / prev_close) * 100
             
             sector_name = TICKER_TO_SECTOR.get(ticker, ticker)
@@ -51,7 +60,6 @@ def get_sector_performance() -> List[Dict[str, Any]]:
                 "changesPercentage": change_pct
             })
         except Exception:
-            # Skip failed tickers
             continue
             
     return result
@@ -61,53 +69,43 @@ def get_sector_etf_quotes() -> List[Dict[str, Any]]:
     Fetch snapshot quotes for the sector-tracking ETFs.
     """
     tickers = list(SECTOR_ETF_MAP.values())
-    result = []
+    tickers_obj = yf.Tickers(" ".join(tickers))
     
+    result = []
     for ticker in tickers:
         try:
-            stock = yf.Ticker(ticker)
-            info = stock.info
-            
-            current = info.get("currentPrice") or info.get("regularMarketPrice")
-            prev_close = info.get("previousClose", 1)
-            
-            change_pct = 0.0
-            change_abs = 0.0
-            if current and prev_close and prev_close != 0:
-                change_abs = current - prev_close
-                change_pct = (change_abs / prev_close) * 100
-            
+            info = tickers_obj.tickers[ticker].info
             result.append({
                 "symbol": ticker,
                 "name": info.get("shortName", ticker),
-                "price": current,
-                "changesPercentage": change_pct,
-                "change": change_abs,
+                "price": info.get("currentPrice") or info.get("regularMarketPrice"),
+                "changesPercentage": ((info.get("currentPrice", 0) - info.get("previousClose", 1)) / info.get("previousClose", 1)) * 100 if info.get("previousClose") else 0.0,
+                "change": (info.get("currentPrice", 0) - info.get("previousClose", 0)) if info.get("currentPrice") and info.get("previousClose") else 0.0,
                 "yearHigh": info.get("fiftyTwoWeekHigh"),
                 "yearLow": info.get("fiftyTwoWeekLow"),
                 "volume": info.get("volume") or info.get("regularMarketVolume"),
             })
         except Exception:
-            # Skip failed tickers
             continue
             
     return result
 
 def get_market_indices(symbols: Iterable[str]) -> List[Dict[str, Any]]:
     """Fetch quote data for the supplied market index symbols."""
-    result = []
+    # symbols like ^GSPC, ^DJI, ^IXIC
+    tickers_obj = yf.Tickers(" ".join(symbols))
     
+    result = []
     for ticker in symbols:
         try:
-            stock = yf.Ticker(ticker)
-            info = stock.info
-            
-            price = info.get("regularMarketPrice") or info.get("currentPrice") or info.get("ask")
+            info = tickers_obj.tickers[ticker].info
+            # Indices sometimes have different field names or delayed data
+            price = info.get("regularMarketPrice") or info.get("currentPrice") or info.get("ask") # Fallbacks
             prev_close = info.get("previousClose")
             
             change = 0.0
             change_pct = 0.0
-            if price and prev_close and prev_close != 0:
+            if price and prev_close:
                 change = price - prev_close
                 change_pct = (change / prev_close) * 100
                 
@@ -119,7 +117,6 @@ def get_market_indices(symbols: Iterable[str]) -> List[Dict[str, Any]]:
                 "changesPercentage": change_pct
             })
         except Exception:
-            # Skip failed indices
             continue
             
     return result

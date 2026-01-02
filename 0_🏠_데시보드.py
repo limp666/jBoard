@@ -200,7 +200,7 @@ def render_sector_performance():
     st.markdown("**전체 데이터**")
     st.dataframe(
         display_df.set_index("sector")[["change_pct"]],
-        width='stretch',
+        use_container_width=True,
         height=350,
     )
 
@@ -231,7 +231,7 @@ def render_sector_etfs():
             "volume": "거래량",
         }
     )
-    st.dataframe(formatted_df, width='stretch', height=320)
+    st.dataframe(formatted_df, use_container_width=True, height=320)
     if source == "sample":
         st.caption("샘플 데이터가 사용되었습니다.")
 
@@ -258,7 +258,7 @@ def render_news_section(selected_tickers: List[str], limit: int):
             thumbnail = row.get("thumbnail")
             with col1:
                 if thumbnail:
-                    st.image(thumbnail, width='stretch')
+                    st.image(thumbnail, use_container_width=True)
                 else:
                     # Placeholder or empty
                     st.write("🖼️")

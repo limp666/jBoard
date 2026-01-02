@@ -23,8 +23,12 @@
 4. 다음 정보를 입력합니다:
    - **Repository**: 방금 업로드한 GitHub 저장소 선택
    - **Branch**: `main` (또는 업로드한 브랜치명)
-   - **Main file path**: `app.py`
+   - **Main file path**: `“0_🏠_데시보드.py”` (※ 중요: 파일명이 변경되었으므로 반드시 직접 입력/선택해야 합니다)
 5. **"Deploy!"** 버튼을 클릭합니다.
+
+> **💡 이미 배포된 경우:**
+> GitHub에 `git push`를 하면 자동으로 Streamlit 앱이 업데이트됩니다.
+> 단, 메인 파일명이 `app.py`에서 `0_🏠_데시보드.py`로 변경되었으므로, Streamlit 대시보드의 **Settings > General > Main file path**에서 파일 경로를 수정해 주어야 합니다.
 
 ### 단계 3: 배포 완료
 - 약 1~3분 정도 기다리면 배포가 완료되고, 전 세계 어디서나 접속 가능한 URL이 생성됩니다.

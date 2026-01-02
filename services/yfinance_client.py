@@ -245,3 +245,59 @@ def get_stock_info(ticker: str) -> Dict[str, Any]:
         return stock.info
     except Exception:
         return {}
+        
+def search_symbols(query: str, limit: int = 10) -> List[Dict[str, str]]:
+    """
+    Search for symbols using Yahoo Finance Auto-complete API.
+    """
+    import requests
+    
+    if not query:
+        return []
+        
+    # Switch to query1, sometimes more stable
+    url = "https://query1.finance.yahoo.com/v1/finance/search"
+    
+    params = {
+        "q": query,
+        "quotesCount": limit,
+        "newsCount": 0,
+    }
+    
+    # Modern User-Agent
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    
+    try:
+        r = requests.get(url, params=params, headers=headers, timeout=5)
+        # Debug print
+        print(f"[DEBUG] Search Status: {r.status_code}")
+        
+        data = r.json()
+        
+        results = []
+        if "quotes" in data:
+            for q in data["quotes"]:
+                symbol = q.get("symbol")
+                shortname = q.get("shortname", "")
+                exch = q.get("exchange", "")
+                type_disp = q.get("quoteType", "")
+                
+                # Exclude Option contracts or irrelevant stuff if needed
+                # if type_disp == 'OPTION': continue
+                
+                results.append({
+                    "symbol": symbol,
+                    "name": shortname,
+                    "exch": exch,
+                    "type": type_disp,
+                    "display": f"{shortname} ({symbol}) - {exch}" if shortname else f"{symbol} - {exch}"
+                })
+        else:
+            print(f"[DEBUG] No 'quotes' in response: {data.keys()}")
+            
+        return results
+    except Exception as e:
+        print(f"Search API Error: {e}")
+        return []

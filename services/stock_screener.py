@@ -119,17 +119,23 @@ def get_index_based_universe(sector_filter: Optional[str] = None) -> List[str]:
     all_tickers = set()
     
     # Get S&P 500
+    print("[DEBUG] Fetching S&P 500...")
     sp500 = get_sp500_tickers()
+    print(f"[DEBUG] S&P 500 returned: {len(sp500)} stocks")
     all_tickers.update(sp500)
     
     # Get NASDAQ 100
+    print("[DEBUG] Fetching NASDAQ 100...")
     nasdaq100 = get_nasdaq100_tickers()
+    print(f"[DEBUG] NASDAQ 100 returned: {len(nasdaq100)} stocks")
     all_tickers.update(nasdaq100)
     
     # Add curated list
+    print(f"[DEBUG] Adding curated list: {len(CURATED_GROWTH_STOCKS)} stocks")
     all_tickers.update(CURATED_GROWTH_STOCKS)
     
     tickers_list = list(all_tickers)
+    print(f"[DEBUG] Total unique stocks: {len(tickers_list)}")
     
     # Filter by sector if specified
     if sector_filter:

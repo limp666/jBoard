@@ -206,22 +206,7 @@ def get_stock_universe(
     else:
         raise ValueError(f"Unknown mode: {mode}")
     
-    # Apply market cap filter
-    if mode != "curated":  # Curated list is pre-filtered
-        print(f"Filtering by market cap ${min_market_cap/1e9:.1f}B - ${max_market_cap/1e9:.1f}B...")
-        filtered = []
-        for ticker in tickers:
-            try:
-                fast_info = yf.Ticker(ticker).fast_info
-                mcap = fast_info.get('market_cap', 0)
-                if min_market_cap <= mcap <= max_market_cap:
-                    filtered.append(ticker)
-            except:
-                continue
-        
-        print(f"After filtering: {len(filtered)} stocks")
-        return filtered
-    
+    # No market cap filtering for index/full modes
     return tickers
 
 

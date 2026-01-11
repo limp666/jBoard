@@ -27,6 +27,37 @@ st.markdown(
 # Sidebar - Filters
 st.sidebar.header("⚙️ 스크리닝 설정")
 
+# SCAN MODE SELECTION
+st.sidebar.subheader("🔍 스캔 범위")
+scan_mode = st.sidebar.radio(
+    "종목 범위 선택",
+    options=["curated", "index", "full"],
+    format_func=lambda x: {
+        "curated": "📋 핵심 리스트 (~200개, 빠름 2-5분)",
+        "index": "📊 주요 인덱스 (500-1500개, 중간 10-20분)",
+        "full": "🌐 전체 시장 (3000+개, 느림 1-2시간)"
+    }[x],
+    index=0
+)
+
+if scan_mode == "full":
+    st.sidebar.warning("⚠️ 전체 스캔은 1-2시간 소요됩니다!")
+elif scan_mode == "index":
+    st.sidebar.info("💡 S&P 500, NASDAQ 100 등 스캔")
+
+sector_filter_universe = None
+if scan_mode in ["index", "full"]:
+    sector_for_scan = st.sidebar.selectbox(
+        "스캔 대상 섹터",
+        options=["전체"] + stock_screener.get_sector_list(),
+        index=0
+    )
+    if sector_for_scan != "전체":
+        sector_filter_universe = sector_for_scan
+
+st.sidebar.markdown("---")
+
+
 # Market Cap Filter
 st.sidebar.subheader("시가총액")
 market_cap_range = st.sidebar.select_slider(

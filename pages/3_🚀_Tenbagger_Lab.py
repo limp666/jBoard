@@ -115,9 +115,25 @@ with st.sidebar.expander("⚖️ 고급: 점수 가중치 조정"):
 
 # Main Content
 if run_screen:
-    with st.spinner("🔎 종목 스크리닝 중... 잠시만 기다려주세요."):
+    with st.spinner(f"�� 종목 스크리닝 중... ({scan_mode} 모드)"):
         # Get stock universe
-        tickers = stock_screener.get_stock_universe(min_market_cap, max_market_cap)
+        tickers = stock_screener.get_stock_universe(
+            mode=scan_mode,
+            min_market_cap=min_market_cap,
+            max_market_cap=max_market_cap,
+            sector_filter=sector_filter_universe
+        )
+        
+        st.info(f"📊 {len(tickers)}개 종목을 스캔합니다...")
+        
+        # Progress bar
+        progress_bar = st.progress(0)
+        progress_text = st.empty()
+        
+        def update_progress(current, total):
+            progress = current / total
+            progress_bar.progress(progress)
+            progress_text.text(f"진행: {current}/{total} ({progress*100:.1f}%)")
         
         # Screen stocks
         screened_df = stock_screener.screen_stocks(
@@ -126,8 +142,12 @@ if run_screen:
             min_earnings_growth=min_earnings_growth,
             max_peg_ratio=max_peg_ratio,
             min_roe=min_roe,
-            max_debt_to_equity=max_debt_to_equity
+            max_debt_to_equity=max_debt_to_equity,
+            progress_callback=update_progress
         )
+        
+        progress_bar.empty()
+        progress_text.empty()
         
         if screened_df.empty:
             st.warning("⚠️ 선택한 조건에 맞는 종목이 없습니다. 필터를 조정해보세요.")

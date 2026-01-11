@@ -65,22 +65,44 @@ MAJOR_INDICES = {
 def get_sp500_tickers() -> List[str]:
     """Get S&P 500 constituents from Wikipedia."""
     try:
+        import requests
+        from io import StringIO
+        
         url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-        tables = pd.read_html(url)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        }
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        tables = pd.read_html(StringIO(response.text))
         sp500_table = tables[0]
         return sp500_table['Symbol'].str.replace('.', '-').tolist()
-    except:
+    except Exception as e:
+        print(f"Warning: Could not fetch S&P 500 list: {e}")
         return []
 
 
 def get_nasdaq100_tickers() -> List[str]:
     """Get NASDAQ 100 constituents."""
     try:
+        import requests
+        from io import StringIO
+        
         url = "https://en.wikipedia.org/wiki/NASDAQ-100"
-        tables = pd.read_html(url)
-        nasdaq_table = tables[4]  # The constituents table
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        }
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        tables = pd.read_html(StringIO(response.text))
+        nasdaq_table = tables[4]
         return nasdaq_table['Ticker'].tolist()
-    except:
+    except Exception as e:
+        print(f"Warning: Could not fetch NASDAQ 100 list: {e}")
         return []
 
 

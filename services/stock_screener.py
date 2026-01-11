@@ -1,73 +1,222 @@
 """
-Stock screening utilities for finding high-growth potential stocks.
+Stock screening utilities with multi-tier universe selection.
+Tier 1: Curated growth stocks (~200)
+Tier 2: Major indices by sector (~1,500)
+Tier 3: Full market scan (~3,000+)
 """
 
 import yfinance as yf
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import pandas as pd
 
 
-# S&P 500 대표 종목 리스트 (실제로는 전체 500개를 사용해야 하지만, 시작은 주요 종목으로)
-SP500_SAMPLE = [
-    # Tech
-    "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "AMD", "CRM", "ADBE",
-    # Finance
-    "JPM", "V", "MA", "BAC", "WFC", "GS", "MS", "AXP", "BLK", "SCHW",
-    # Healthcare
-    "JNJ", "UNH", "PFE", "LLY", "ABBV", "TMO", "ABT", "DHR", "MRK", "BMY",
-    # Consumer
-    "WMT", "PG", "KO", "PEP", "COST", "NKE", "MCD", "SBUX", "HD", "TGT",
-    # Energy
-    "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HAL",
-    # Industrial
-    "BA", "CAT", "UPS", "HON", "UNP", "LMT", "RTX", "DE", "MMM", "GE",
-    # Other
-    "DIS", "NFLX", "CMCSA", "VZ", "T", "INTC", "CSCO", "ORCL", "IBM", "QCOM"
+# TIER 1: CURATED GROWTH STOCKS (~200)
+CURATED_GROWTH_STOCKS = [
+    # Technology - High Growth
+    "PLTR", "SNOW", "CRWD", "ZS", "DDOG", "NET", "MDB", "OKTA", "TEAM", "SHOP",
+    "SQ", "PYPL", "COIN", "RBLX", "U", "PATH", "DOCN", "FROG", "S", "TWLO",
+    "ZM", "ASAN", "PD", "BILL", "WIX", "ROKU", "SPOT", "UBER", "LYFT", "DASH",
+    "ABNB", "RIVN", "LCID", "CHPT", "BLNK", "STEM", "ENPH", "SEDG", "RUN",
+    
+    # Cybersecurity & Cloud
+    "PANW", "FTNT", "CYBR", "TENB", "VRNS", "QLYS",
+    
+    # Semiconductors - Mid Cap
+    "MRVL", "LRCX", "KLAC", "AMAT", "MU", "SWKS", "QRVO", "MCHP", "MPWR", "ON",
+    
+    # Software & SaaS
+    "NOW", "WDAY", "VEEV", "ZI", "PAYC", "SMAR", "COUP", "HUB",
+    
+    # E-commerce & Digital
+    "MELI", "SE", "ETSY", "W", "CHWY", "PINS", "SNAP",
+    
+    # FinTech
+    "AFRM", "UPST", "SOFI", "LC", "NU", "HOOD",
+    
+    # Healthcare & Biotech
+    "MRNA", "BNTX", "NVAX", "REGN", "VRTX", "ILMN", "EXAS", "TDOC", "DXCM",
+    "ALGN", "ISRG", "IONS", "CRSP", "EDIT", "NTLA", "BEAM",
+    
+    # Clean Energy & EV
+    "TSLA", "NIO", "XPEV", "LI", "PLUG", "FCEL", "BE", "QS",
+    
+    # Consumer Growth
+    "LULU", "DECK", "CROX", "BYND",
+    
+    # Gaming & Entertainment
+    "EA", "TTWO", "DKNG", "PENN",
+    
+    # Other Growth
+    "Z", "RDFN", "OPEN", "BKNG"
 ]
 
 
-def get_stock_universe(min_market_cap: float = 200e6, max_market_cap: float = 5e9) -> List[str]:
+# TIER 2: MAJOR INDEX CONSTITUENTS
+# S&P indices provide good coverage of mid/small caps
+MAJOR_INDICES = {
+    "sp500": "^GSPC",
+    "sp400": "^MID",  # S&P MidCap 400
+    "sp600": "^SML",  # S&P SmallCap 600
+    "nasdaq100": "^NDX",
+    "russell2000": "^RUT"
+}
+
+
+def get_sp500_tickers() -> List[str]:
+    """Get S&P 500 constituents from Wikipedia."""
+    try:
+        url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+        tables = pd.read_html(url)
+        sp500_table = tables[0]
+        return sp500_table['Symbol'].str.replace('.', '-').tolist()
+    except:
+        return []
+
+
+def get_nasdaq100_tickers() -> List[str]:
+    """Get NASDAQ 100 constituents."""
+    try:
+        url = "https://en.wikipedia.org/wiki/NASDAQ-100"
+        tables = pd.read_html(url)
+        nasdaq_table = tables[4]  # The constituents table
+        return nasdaq_table['Ticker'].tolist()
+    except:
+        return []
+
+
+def get_index_based_universe(sector_filter: Optional[str] = None) -> List[str]:
     """
-    Get list of stocks to screen based on market cap criteria.
+    Get stock universe from major indices.
     
     Args:
-        min_market_cap: Minimum market cap in dollars
-        max_market_cap: Maximum market cap in dollars
+        sector_filter: Optional sector to filter (e.g., "Technology")
+        
+    Returns:
+        List of tickers from S&P 500, NASDAQ 100, etc.
+    """
+    all_tickers = set()
+    
+    # Get S&P 500
+    sp500 = get_sp500_tickers()
+    all_tickers.update(sp500)
+    
+    # Get NASDAQ 100
+    nasdaq100 = get_nasdaq100_tickers()
+    all_tickers.update(nasdaq100)
+    
+    # Add curated list
+    all_tickers.update(CURATED_GROWTH_STOCKS)
+    
+    tickers_list = list(all_tickers)
+    
+    # Filter by sector if specified
+    if sector_filter:
+        filtered = []
+        print(f"Filtering by sector: {sector_filter}")
+        for ticker in tickers_list:
+            try:
+                info = yf.Ticker(ticker).info
+                if info.get("sector") == sector_filter:
+                    filtered.append(ticker)
+            except:
+                continue
+        return filtered
+    
+    return tickers_list
+
+
+def get_full_market_scan() -> List[str]:
+    """
+    Get comprehensive list of all tradable US stocks.
+    WARNING: This is SLOW (3,000+ tickers)
+    
+    Returns:
+        List of all US stock tickers
+    """
+    # This would require a screener API or comprehensive ticker list
+    # For now, combine all available sources
+    all_tickers = set()
+    
+    # Add major indices
+    all_tickers.update(get_index_based_universe())
+    
+    # TODO: Add Russell 2000, Russell 3000 if available
+    # For full implementation, would need:
+    # - FMP API screener
+    # - NASDAQ/NYSE ticker lists
+    # - Or paid data provider
+    
+    return list(all_tickers)
+
+
+def get_stock_universe(
+    mode: str = "curated",
+    min_market_cap: float = 200e6,
+    max_market_cap: float = 50e9,
+    sector_filter: Optional[str] = None
+) -> List[str]:
+    """
+    Get stock universe based on selected mode.
+    
+    Args:
+        mode: "curated" | "index" | "full"
+        min_market_cap: Minimum market cap filter
+        max_market_cap: Maximum market cap filter
+        sector_filter: Optional sector filter
         
     Returns:
         List of ticker symbols
     """
-    # For now, return sample tickers
-    # In production, this would query all stocks and filter by market cap
-    return SP500_SAMPLE
+    if mode == "curated":
+        print(f"📋 Using curated list ({len(CURATED_GROWTH_STOCKS)} stocks)")
+        tickers = CURATED_GROWTH_STOCKS.copy()
+        
+    elif mode == "index":
+        print("📊 Fetching major index constituents...")
+        tickers = get_index_based_universe(sector_filter)
+        print(f"Found {len(tickers)} stocks from indices")
+        
+    elif mode == "full":
+        print("🌐 WARNING: Full market scan will take 30-60 minutes")
+        tickers = get_full_market_scan()
+        print(f"Found {len(tickers)} stocks for full scan")
+        
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
+    
+    # Apply market cap filter
+    if mode != "curated":  # Curated list is pre-filtered
+        print(f"Filtering by market cap ${min_market_cap/1e9:.1f}B - ${max_market_cap/1e9:.1f}B...")
+        filtered = []
+        for ticker in tickers:
+            try:
+                fast_info = yf.Ticker(ticker).fast_info
+                mcap = fast_info.get('market_cap', 0)
+                if min_market_cap <= mcap <= max_market_cap:
+                    filtered.append(ticker)
+            except:
+                continue
+        
+        print(f"After filtering: {len(filtered)} stocks")
+        return filtered
+    
+    return tickers
 
 
 def fetch_stock_data(ticker: str) -> Dict[str, Any]:
     """
     Fetch comprehensive stock data for screening.
-    
-    Returns dict with:
-        - basic_info: price, market_cap, etc.
-        - financials: revenue, earnings, margins
-        - valuation: P/E, P/B, PEG
-        - growth: revenue_growth, earnings_growth
-        - technical: price_change_6m, relative_strength
     """
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
         
-        # Get historical data for growth calculations
+        # Get historical data
         hist = stock.history(period="2y")
         
         # Basic info
         current_price = info.get("currentPrice") or info.get("regularMarketPrice", 0)
         market_cap = info.get("marketCap", 0)
-        
-        # Financials
-        revenue = info.get("totalRevenue", 0)
-        trailing_eps = info.get("trailingEps", 0)
-        forward_eps = info.get("forwardEps", 0)
         
         # Growth metrics
         revenue_growth = info.get("revenueGrowth", 0) * 100 if info.get("revenueGrowth") else 0
@@ -78,7 +227,6 @@ def fetch_stock_data(ticker: str) -> Dict[str, Any]:
         pb_ratio = info.get("priceToBook", 0)
         peg_ratio = info.get("pegRatio", 0)
         
-        # Calculate PEG if not available
         if not peg_ratio and pe_ratio and earnings_growth and earnings_growth > 0:
             peg_ratio = pe_ratio / earnings_growth
         
@@ -90,28 +238,20 @@ def fetch_stock_data(ticker: str) -> Dict[str, Any]:
         debt_to_equity = info.get("debtToEquity", 0) / 100 if info.get("debtToEquity") else 0
         current_ratio = info.get("currentRatio", 0)
         
-        # Technical/Momentum
-        # Calculate 6-month price change
-        if len(hist) >= 126:  # ~6 months of trading days
+        # Momentum
+        if len(hist) >= 126:
             price_6m_ago = hist['Close'].iloc[-126]
             price_change_6m = ((current_price - price_6m_ago) / price_6m_ago) * 100
         else:
             price_change_6m = 0
         
-        # 52-week high/low
+        # 52-week metrics
         fifty_two_week_high = info.get("fiftyTwoWeekHigh", current_price)
-        fifty_two_week_low = info.get("fiftyTwoWeekLow", current_price)
-        
-        # Distance from 52-week high (momentum indicator)
         if fifty_two_week_high > 0:
             distance_from_high = ((current_price - fifty_two_week_high) / fifty_two_week_high) * 100
         else:
             distance_from_high = -100
         
-        # Volume
-        avg_volume = info.get("averageVolume", 0)
-        
-        # Institutional ownership
         institutional_ownership = info.get("heldPercentInstitutions", 0) * 100 if info.get("heldPercentInstitutions") else 0
         
         return {
@@ -119,40 +259,26 @@ def fetch_stock_data(ticker: str) -> Dict[str, Any]:
             "name": info.get("shortName", ticker),
             "sector": info.get("sector", "Unknown"),
             "industry": info.get("industry", "Unknown"),
-            
-            # Basic
             "price": current_price,
             "market_cap": market_cap,
-            "avg_volume": avg_volume,
-            
-            # Growth
+            "avg_volume": info.get("averageVolume", 0),
             "revenue_growth": revenue_growth,
             "earnings_growth": earnings_growth,
-            
-            # Valuation
             "pe_ratio": pe_ratio,
             "pb_ratio": pb_ratio,
             "peg_ratio": peg_ratio,
-            
-            # Profitability
             "roe": roe,
             "profit_margin": profit_margin,
-            
-            # Financial Health
             "debt_to_equity": debt_to_equity,
             "current_ratio": current_ratio,
-            
-            # Momentum
             "price_change_6m": price_change_6m,
             "distance_from_52w_high": distance_from_high,
             "institutional_ownership": institutional_ownership,
-            
-            # Raw info for additional analysis
             "raw_info": info
         }
         
     except Exception as e:
-        print(f"Error fetching data for {ticker}: {e}")
+        print(f"Error fetching {ticker}: {e}")
         return None
 
 
@@ -162,28 +288,29 @@ def screen_stocks(
     min_earnings_growth: float = 0,
     max_peg_ratio: float = 10,
     min_roe: float = 0,
-    max_debt_to_equity: float = 10
+    max_debt_to_equity: float = 10,
+    progress_callback=None
 ) -> pd.DataFrame:
     """
-    Screen stocks based on criteria.
+    Screen stocks with optional progress callback.
     
     Args:
-        tickers: List of ticker symbols to screen
-        min_revenue_growth: Minimum revenue growth % (YoY)
-        min_earnings_growth: Minimum earnings growth %
-        max_peg_ratio: Maximum PEG ratio
-        min_roe: Minimum ROE %
-        max_debt_to_equity: Maximum debt/equity ratio
+        tickers: List of tickers to screen
+        ...filters...
+        progress_callback: Optional function(current, total) for progress updates
         
     Returns:
-        DataFrame with screened stocks and their metrics
+        DataFrame with screened stocks
     """
     results = []
+    total = len(tickers)
     
-    for ticker in tickers:
+    for i, ticker in enumerate(tickers):
+        if progress_callback:
+            progress_callback(i + 1, total)
+        
         data = fetch_stock_data(ticker)
         if data and data["market_cap"] > 0:
-            # Apply filters
             if (data["revenue_growth"] >= min_revenue_growth and
                 data["earnings_growth"] >= min_earnings_growth and
                 (data["peg_ratio"] <= max_peg_ratio if data["peg_ratio"] > 0 else True) and
@@ -192,18 +319,14 @@ def screen_stocks(
                 
                 results.append(data)
     
-    if not results:
-        return pd.DataFrame()
-    
-    df = pd.DataFrame(results)
-    return df
+    return pd.DataFrame(results) if results else pd.DataFrame()
 
 
 def get_sector_list() -> List[str]:
-    """Get unique list of sectors for filtering."""
+    """Get list of sectors."""
     return [
         "Technology",
-        "Healthcare", 
+        "Healthcare",
         "Financial Services",
         "Consumer Cyclical",
         "Consumer Defensive",

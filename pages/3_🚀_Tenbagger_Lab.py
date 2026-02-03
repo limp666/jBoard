@@ -146,7 +146,7 @@ with st.sidebar.expander("⚖️ 고급: 점수 가중치 조정"):
 
 # Main Content
 if run_screen:
-    with st.spinner(f"�� 종목 스크리닝 중... ({scan_mode} 모드)"):
+    with st.spinner(f"🔍 종목 스크리닝 중... ({scan_mode} 모드)"):
         # Get stock universe
         tickers = stock_screener.get_stock_universe(
             mode=scan_mode,

@@ -53,6 +53,54 @@ CURATED_GROWTH_STOCKS = [
 ]
 
 
+# FALLBACK LISTS (for when Wikipedia is blocked, e.g., on Streamlit Cloud)
+SP500_FALLBACK = [
+    # Top holdings by market cap (covers ~80% of S&P 500 market cap)
+    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "GOOG", "META", "TSLA", "BRK.B",
+    "LLY", "AVGO", "JPM", "UNH", "V", "XOM", "WMT", "MA", "JNJ", "PG",
+    "COST", "ORCL", "HD", "NFLX", "BAC", "ABBV", "CVX", "KO", "CRM", "MRK",
+    "AMD", "ADBE", "PEP", "ACN", "LIN", "TMO", "MCD", "CSCO", "ABT", "DHR",
+    "WFC", "GE", "INTU", "TXN", "VZ", "QCOM", "CMCSA", "PM", "IBM", "AMGN",
+    "DIS", "ISRG", "AMAT", "HON", "CAT", "NEE", "SPGI", "UBER", "PFE", "SYK",
+    "GS", "BKNG", "AXP", "LOW", "BSX", "T", "PGR", "DE", "TJX", "VRTX",
+    "SBUX", "BLK", "ADP", "GILD", "MDT", "LMT", "C", "MMC", "ETN", "REGN",
+    "CB", "ADI", "SCHW", "BX", "PLD", "TMUS", "ANET", "CVS", "MU", "SLB",
+    "PANW", "FI", "AMT", "LRCX", "MDLZ", "SO", "BMY", "CI", "KLAC", "ICE",
+    "SNPS", "EOG", "NOW", "WM", "MSI", "ZTS", "DUK", "EQIX", "APH", "CMG",
+    "USB", "NOC", "PH", "ITW", "PNC", "APO", "CDNS", "SHW", "GD", "TT",
+    "CL", "MCO", "TDG", "MMM", "CARR", "EMR", "AON", "FCX", "ROP", "WELL",
+    "ORLY", "COF", "MAR", "HCA", "ECL", "GM", "CEG", "FDX", "AFL", "AJG",
+    "NSC", "AIG", "PSA", "AZO", "MCHP", "TFC", "NXPI", "ADSK", "SRE", "TRV",
+    "MPC", "FICO", "AMP", "PCAR", "NEM", "JCI", "HLT", "MET", "O", "PAYX",
+    "AEP", "CPRT", "MNST", "ROST", "COR", "KMB", "ALL", "FTNT", "HUM", "FAST",
+    "D", "CME", "DHI", "SPG", "KMI", "MSCI", "ODFL", "PRU", "CCI", "GWW",
+    "TEL", "CTVA", "LHX", "YUM", "KVUE", "EA", "BK", "DD", "STZ", "KDP",
+    "VMC", "RSG", "PCG", "CTAS", "VRSK", "URI", "EXC", "KR", "FIS", "GEHC",
+    "GIS", "IT", "A", "F", "DXCM", "ACGL", "IDXX", "XEL", "HSY", "DAL",
+    # Additional coverage from different sectors
+    "NKE", "DOW", "MTD", "EW", "PWR", "RMD", "ON", "DVN", "GLW", "IR",
+    "HWM", "CBRE", "AME", "EDR", "ANSS", "EFX", "BIIB", "MPWR", "DLR", "WAB",
+    "MLM", "EXR", "VICI", "K", "CDW", "ROK", "AVB", "OKE", "HPQ", "TTWO",
+    "EBAY", "FANG", "CHD", "TSCO", "DOV", "KEYS", "PPG", "XYL", "IQV", "EIX",
+    "AXON", "HBAN", "MTB", "VTR", "RJF", "FTS", "ALGN", "TROW", "SBAC", "AWK",
+    "SYY", "ETR", "WBD", "DFS", "INVH", "NTRS", "TYL", "GEN", "WY", "IP"
+]
+
+NASDAQ100_FALLBACK = [
+    # Complete NASDAQ-100 major components
+    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "GOOG", "META", "TSLA", "AVGO",
+    "COST", "NFLX", "AMD", "ADBE", "PEP", "CSCO", "CMCSA", "INTC", "INTU",
+    "TXN", "QCOM", "TMUS", "AMAT", "ISRG", "BKNG",  "AMGN", "HON", "VRTX",
+    "ADP", "PANW", "GILD", "SBUX", "ADI", "MU", "LRCX", "MDLZ", "REGN",
+    "KLAC", "SNPS", "MELI", "CDNS", "PYPL", "CRWD", "MAR", "ORLY", "MRVL",
+    "CSX", "FTNT", "NXPI", "ADSK", "ABNB", "WDAY", "DASH", "ROP", "PCAR",
+    "CPRT", "MNST", "ROST", "AEP", "ODFL", "PAYX", "FAST", "EA", "KDP",
+    "CTAS", "VRSK", "DXCM", "IDXX", "KHC", "EXC", "XEL", "CTSH", "GEHC",
+    "CCEP", "TEAM", "LULU", "ON", "CSGP", "ANSS", "TTWO", "ZS", "DDOG",
+    "BIIB", "MRNA", "CDW", "ILMN", "WBD", "MDB", "GFS", "SMCI", "ARM"
+]
+
+
 def get_sp500_tickers() -> List[str]:
     """Get S&P 500 constituents from Wikipedia with improved error handling."""
     try:
@@ -71,8 +119,8 @@ def get_sp500_tickers() -> List[str]:
         return tickers
     except Exception as e:
         print(f"⚠️ Warning: Could not fetch S&P 500 list: {e}")
-        print("→ Falling back to curated list only")
-        return []
+        print(f"→ Using fallback S&P 500 list ({len(SP500_FALLBACK)} tickers)")
+        return SP500_FALLBACK
 
 
 def get_nasdaq100_tickers() -> List[str]:
@@ -98,11 +146,13 @@ def get_nasdaq100_tickers() -> List[str]:
                     print(f"✓ Successfully fetched {len(tickers)} NASDAQ-100 tickers")
                     return tickers
         
-        print("⚠️ Could not find NASDAQ-100 table, trying alternative source")
-        return []
+        print("⚠️ Could not find NASDAQ-100 table in Wikipedia")
+        print(f"→ Using fallback NASDAQ-100 list ({len(NASDAQ100_FALLBACK)} tickers)")
+        return NASDAQ100_FALLBACK
     except Exception as e:
         print(f"⚠️ Warning: Could not fetch NASDAQ 100 list: {e}")
-        return []
+        print(f"→ Using fallback NASDAQ-100 list ({len(NASDAQ100_FALLBACK)} tickers)")
+        return NASDAQ100_FALLBACK
 
 
 def get_nasdaq_listed_tickers() -> List[str]:

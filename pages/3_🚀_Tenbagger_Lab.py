@@ -3,6 +3,8 @@
 
 A systematic approach to finding high-growth stocks based on expert methodologies
 from Peter Lynch, William O'Neil (CAN SLIM), and modern growth metrics.
+
+Version: 2.1.0 - Added fallback ticker lists for reliable deployment
 """
 
 import streamlit as st
@@ -33,9 +35,9 @@ scan_mode = st.sidebar.radio(
     "종목 범위 선택",
     options=["curated", "index", "full"],
     format_func=lambda x: {
-        "curated": "📋 핵심 리스트 (~200개, 빠름 2-5분)",
-        "index": "📊 주요 인덱스 (500-1500개, 중간 10-20분)",
-        "full": "🌐 전체 시장 (3000+개, 느림 1-2시간)"
+        "curated": "📋 핵심 리스트 (~110개, 빠름 2-5분)",
+        "index": "📊 주요 인덱스 (~370개, 중간 5-10분)",
+        "full": "🌐 전체 시장 (10,000+개, 느림 1-2시간)"
     }[x],
     index=0
 )

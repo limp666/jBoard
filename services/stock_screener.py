@@ -115,6 +115,13 @@ def get_sp500_tickers() -> List[str]:
         tables = pd.read_html(StringIO(response.text))
         sp500_table = tables[0]
         tickers = sp500_table['Symbol'].str.replace('.', '-', regex=False).tolist()
+        
+        # Validate that we got actual data
+        if not tickers or len(tickers) < 100:
+            print(f"⚠️ Warning: Wikipedia returned insufficient data ({len(tickers) if tickers else 0} tickers)")
+            print(f"→ Using fallback S&P 500 list ({len(SP500_FALLBACK)} tickers)")
+            return SP500_FALLBACK
+        
         print(f"✓ Successfully fetched {len(tickers)} S&P 500 tickers")
         return tickers
     except Exception as e:
@@ -142,11 +149,13 @@ def get_nasdaq100_tickers() -> List[str]:
                 tickers = table[ticker_col].tolist()
                 # Filter out non-ticker entries
                 tickers = [t for t in tickers if isinstance(t, str) and len(t) <= 5 and t.isupper()]
+                
+                # Validate that we have sufficient data
                 if len(tickers) > 50:  # Sanity check
                     print(f"✓ Successfully fetched {len(tickers)} NASDAQ-100 tickers")
                     return tickers
         
-        print("⚠️ Could not find NASDAQ-100 table in Wikipedia")
+        print("⚠️ Could not find NASDAQ-100 table in Wikipedia or insufficient data")
         print(f"→ Using fallback NASDAQ-100 list ({len(NASDAQ100_FALLBACK)} tickers)")
         return NASDAQ100_FALLBACK
     except Exception as e:

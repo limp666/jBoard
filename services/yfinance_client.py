@@ -75,12 +75,22 @@ def get_sector_etf_quotes() -> List[Dict[str, Any]]:
     for ticker in tickers:
         try:
             info = tickers_obj.tickers[ticker].info
+            # Use regularMarketPrice as primary (currentPrice is often None)
+            price = info.get("regularMarketPrice") or info.get("currentPrice")
+            prev_close = info.get("previousClose")
+            
+            change = 0.0
+            change_pct = 0.0
+            if price and prev_close:
+                change = price - prev_close
+                change_pct = (change / prev_close) * 100
+            
             result.append({
                 "symbol": ticker,
                 "name": info.get("shortName", ticker),
-                "price": info.get("currentPrice") or info.get("regularMarketPrice"),
-                "changesPercentage": ((info.get("currentPrice", 0) - info.get("previousClose", 1)) / info.get("previousClose", 1)) * 100 if info.get("previousClose") else 0.0,
-                "change": (info.get("currentPrice", 0) - info.get("previousClose", 0)) if info.get("currentPrice") and info.get("previousClose") else 0.0,
+                "price": price,
+                "changesPercentage": change_pct,
+                "change": change,
                 "yearHigh": info.get("fiftyTwoWeekHigh"),
                 "yearLow": info.get("fiftyTwoWeekLow"),
                 "volume": info.get("volume") or info.get("regularMarketVolume"),

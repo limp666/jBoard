@@ -161,10 +161,10 @@ if run_screen:
         progress_bar = st.progress(0)
         progress_text = st.empty()
         
-        def update_progress(current, total):
+        def update_progress(current, total, ticker="", company_name=""):
             progress = current / total
             progress_bar.progress(progress)
-            progress_text.text(f"진행: {current}/{total} ({progress*100:.1f}%)")
+            progress_text.text(f"진행: {current}/{total} ({progress*100:.1f}%) | 분석 중: {ticker} - {company_name}")
         
         # Screen stocks
         screened_df = stock_screener.screen_stocks(

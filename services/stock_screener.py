@@ -354,7 +354,7 @@ def screen_stocks(
     Args:
         tickers: List of tickers to screen
         ...filters...
-        progress_callback: Optional function(current, total) for progress updates
+        progress_callback: Optional function(current, total, ticker, company_name) for progress updates
         
     Returns:
         DataFrame with screened stocks
@@ -363,10 +363,14 @@ def screen_stocks(
     total = len(tickers)
     
     for i, ticker in enumerate(tickers):
-        if progress_callback:
-            progress_callback(i + 1, total)
-        
+        # Fetch data first to get company name
         data = fetch_stock_data(ticker)
+        
+        # Update progress with ticker and company name info
+        if progress_callback:
+            company_name = data.get("name", ticker) if data else ticker
+            progress_callback(i + 1, total, ticker, company_name)
+        
         if data and data["market_cap"] > 0:
             if (data["revenue_growth"] >= min_revenue_growth and
                 data["earnings_growth"] >= min_earnings_growth and

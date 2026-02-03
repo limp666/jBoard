@@ -1,13 +1,15 @@
 """
 Stock screening utilities with multi-tier universe selection.
 Tier 1: Curated growth stocks (~200)
-Tier 2: Major indices by sector (~1,500)
+Tier 2: Major indices by sector (~500-1500)
 Tier 3: Full market scan (~3,000+)
 """
 
 import yfinance as yf
 from typing import List, Dict, Any, Optional
 import pandas as pd
+import requests
+from io import StringIO
 
 
 # TIER 1: CURATED GROWTH STOCKS (~200)
@@ -51,58 +53,101 @@ CURATED_GROWTH_STOCKS = [
 ]
 
 
-# TIER 2: MAJOR INDEX CONSTITUENTS
-# S&P indices provide good coverage of mid/small caps
-MAJOR_INDICES = {
-    "sp500": "^GSPC",
-    "sp400": "^MID",  # S&P MidCap 400
-    "sp600": "^SML",  # S&P SmallCap 600
-    "nasdaq100": "^NDX",
-    "russell2000": "^RUT"
-}
-
-
 def get_sp500_tickers() -> List[str]:
-    """Get S&P 500 constituents from Wikipedia."""
+    """Get S&P 500 constituents from Wikipedia with improved error handling."""
     try:
-        import requests
-        from io import StringIO
-        
         url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
         
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
         
         tables = pd.read_html(StringIO(response.text))
         sp500_table = tables[0]
-        return sp500_table['Symbol'].str.replace('.', '-').tolist()
+        tickers = sp500_table['Symbol'].str.replace('.', '-', regex=False).tolist()
+        print(f"✓ Successfully fetched {len(tickers)} S&P 500 tickers")
+        return tickers
     except Exception as e:
-        print(f"Warning: Could not fetch S&P 500 list: {e}")
+        print(f"⚠️ Warning: Could not fetch S&P 500 list: {e}")
+        print("→ Falling back to curated list only")
         return []
 
 
 def get_nasdaq100_tickers() -> List[str]:
-    """Get NASDAQ 100 constituents."""
+    """Get NASDAQ 100 constituents with improved error handling."""
     try:
-        import requests
-        from io import StringIO
-        
         url = "https://en.wikipedia.org/wiki/NASDAQ-100"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
         
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
         
         tables = pd.read_html(StringIO(response.text))
-        nasdaq_table = tables[4]
-        return nasdaq_table['Ticker'].tolist()
+        # NASDAQ-100 table is usually the 4th or 5th table
+        for i, table in enumerate(tables):
+            if 'Ticker' in table.columns or 'Symbol' in table.columns:
+                ticker_col = 'Ticker' if 'Ticker' in table.columns else 'Symbol'
+                tickers = table[ticker_col].tolist()
+                # Filter out non-ticker entries
+                tickers = [t for t in tickers if isinstance(t, str) and len(t) <= 5 and t.isupper()]
+                if len(tickers) > 50:  # Sanity check
+                    print(f"✓ Successfully fetched {len(tickers)} NASDAQ-100 tickers")
+                    return tickers
+        
+        print("⚠️ Could not find NASDAQ-100 table, trying alternative source")
+        return []
     except Exception as e:
-        print(f"Warning: Could not fetch NASDAQ 100 list: {e}")
+        print(f"⚠️ Warning: Could not fetch NASDAQ 100 list: {e}")
+        return []
+
+
+def get_nasdaq_listed_tickers() -> List[str]:
+    """
+    Get comprehensive NASDAQ listed stocks from NASDAQ FTP server.
+    This is the most reliable source for full market data.
+    """
+    try:
+        print("📡 Fetching NASDAQ listed stocks from official FTP...")
+        
+        # NASDAQ provides official lists via FTP
+        nasdaq_url = "ftp://ftp.nasdaqtrader.com/symboldirectory/nasdaqlisted.txt"
+        other_url = "ftp://ftp.nasdaqtrader.com/symboldirectory/otherlisted.txt"
+        
+        all_tickers = set()
+        
+        # Get NASDAQ listed
+        try:
+            nasdaq_df = pd.read_csv(nasdaq_url, sep='|')
+            nasdaq_tickers = nasdaq_df['Symbol'].dropna().tolist()
+            # Filter out test symbols and special cases
+            nasdaq_tickers = [t for t in nasdaq_tickers if not t.endswith('$') and len(t) <= 5]
+            all_tickers.update(nasdaq_tickers)
+            print(f"  ✓ NASDAQ listed: {len(nasdaq_tickers)} tickers")
+        except Exception as e:
+            print(f"  ⚠️ Could not fetch NASDAQ listed: {e}")
+        
+        # Get other exchanges (NYSE, AMEX, etc.)
+        try:
+            other_df = pd.read_csv(other_url, sep='|')
+            # Filter for common exchanges
+            other_df = other_df[other_df['Exchange'].isin(['N', 'A', 'P'])]  # NYSE, AMEX, ARCA
+            other_tickers = other_df['ACT Symbol'].dropna().tolist()
+            other_tickers = [t for t in other_tickers if not t.endswith('$') and len(t) <= 5]
+            all_tickers.update(other_tickers)
+            print(f"  ✓ Other exchanges: {len(other_tickers)} tickers")
+        except Exception as e:
+            print(f"  ⚠️ Could not fetch other exchanges: {e}")
+        
+        tickers_list = sorted(list(all_tickers))
+        print(f"✓ Total NASDAQ FTP tickers: {len(tickers_list)}")
+        return tickers_list
+        
+    except Exception as e:
+        print(f"⚠️ Error fetching from NASDAQ FTP: {e}")
         return []
 
 
@@ -119,62 +164,54 @@ def get_index_based_universe(sector_filter: Optional[str] = None) -> List[str]:
     all_tickers = set()
     
     # Get S&P 500
-    print("[DEBUG] Fetching S&P 500...")
+    print("📊 Fetching S&P 500...")
     sp500 = get_sp500_tickers()
-    print(f"[DEBUG] S&P 500 returned: {len(sp500)} stocks")
     all_tickers.update(sp500)
     
     # Get NASDAQ 100
-    print("[DEBUG] Fetching NASDAQ 100...")
+    print("📊 Fetching NASDAQ 100...")
     nasdaq100 = get_nasdaq100_tickers()
-    print(f"[DEBUG] NASDAQ 100 returned: {len(nasdaq100)} stocks")
     all_tickers.update(nasdaq100)
     
-    # Add curated list
-    print(f"[DEBUG] Adding curated list: {len(CURATED_GROWTH_STOCKS)} stocks")
+    # Always include curated list
+    print(f"📋 Adding curated growth stocks ({len(CURATED_GROWTH_STOCKS)})...")
     all_tickers.update(CURATED_GROWTH_STOCKS)
     
-    tickers_list = list(all_tickers)
-    print(f"[DEBUG] Total unique stocks: {len(tickers_list)}")
+    tickers_list = sorted(list(all_tickers))
+    print(f"✅ Total unique stocks: {len(tickers_list)}")
     
-    # Filter by sector if specified
-    if sector_filter:
-        filtered = []
-        print(f"Filtering by sector: {sector_filter}")
-        for ticker in tickers_list:
-            try:
-                info = yf.Ticker(ticker).info
-                if info.get("sector") == sector_filter:
-                    filtered.append(ticker)
-            except:
-                continue
-        return filtered
-    
+    # Note: Sector filtering is now done AFTER fetching basic data
+    # to avoid making too many API calls upfront
     return tickers_list
 
 
 def get_full_market_scan() -> List[str]:
     """
     Get comprehensive list of all tradable US stocks.
-    WARNING: This is SLOW (3,000+ tickers)
+    Uses NASDAQ FTP server for official, complete data.
+    WARNING: This returns 3,000+ tickers and will be SLOW to screen
     
     Returns:
         List of all US stock tickers
     """
-    # This would require a screener API or comprehensive ticker list
-    # For now, combine all available sources
+    print("🌐 Initiating FULL MARKET SCAN...")
+    print("⚠️  This will return 3,000+ tickers - screening will take 1-2 hours!")
+    
+    # Try NASDAQ FTP (most comprehensive)
     all_tickers = set()
+    nasdaq_tickers = get_nasdaq_listed_tickers()
     
-    # Add major indices
-    all_tickers.update(get_index_based_universe())
+    if nasdaq_tickers:
+        all_tickers.update(nasdaq_tickers)
+    else:
+        # Fallback: use index-based universe
+        print("→ NASDAQ FTP failed, falling back to index-based universe")
+        all_tickers.update(get_index_based_universe())
     
-    # TODO: Add Russell 2000, Russell 3000 if available
-    # For full implementation, would need:
-    # - FMP API screener
-    # - NASDAQ/NYSE ticker lists
-    # - Or paid data provider
+    tickers_list = sorted(list(all_tickers))
+    print(f"✅ Full market: {len(tickers_list)} total tickers")
     
-    return list(all_tickers)
+    return tickers_list
 
 
 def get_stock_universe(
@@ -188,9 +225,9 @@ def get_stock_universe(
     
     Args:
         mode: "curated" | "index" | "full"
-        min_market_cap: Minimum market cap filter
-        max_market_cap: Maximum market cap filter
-        sector_filter: Optional sector filter
+        min_market_cap: Minimum market cap filter (applied during screening, not here)
+        max_market_cap: Maximum market cap filter (applied during screening, not here)
+        sector_filter: Optional sector filter (applied during screening, not here)
         
     Returns:
         List of ticker symbols
@@ -202,17 +239,16 @@ def get_stock_universe(
     elif mode == "index":
         print("📊 Fetching major index constituents...")
         tickers = get_index_based_universe(sector_filter)
-        print(f"Found {len(tickers)} stocks from indices")
+        print(f"→ Found {len(tickers)} stocks from indices")
         
     elif mode == "full":
-        print("🌐 WARNING: Full market scan will take 30-60 minutes")
+        print("🌐 WARNING: Full market scan will take 1-2 hours")
         tickers = get_full_market_scan()
-        print(f"Found {len(tickers)} stocks for full scan")
+        print(f"→ Found {len(tickers)} stocks for full scan")
         
     else:
         raise ValueError(f"Unknown mode: {mode}")
     
-    # No market cap filtering for index/full modes
     return tickers
 
 
@@ -224,12 +260,20 @@ def fetch_stock_data(ticker: str) -> Dict[str, Any]:
         stock = yf.Ticker(ticker)
         info = stock.info
         
+        # Skip if no valid data
+        if not info or 'symbol' not in info:
+            return None
+        
         # Get historical data
         hist = stock.history(period="2y")
         
         # Basic info
         current_price = info.get("currentPrice") or info.get("regularMarketPrice", 0)
         market_cap = info.get("marketCap", 0)
+        
+        # Skip penny stocks and invalid data
+        if current_price < 1 or market_cap == 0:
+            return None
         
         # Growth metrics
         revenue_growth = info.get("revenueGrowth", 0) * 100 if info.get("revenueGrowth") else 0
@@ -291,7 +335,7 @@ def fetch_stock_data(ticker: str) -> Dict[str, Any]:
         }
         
     except Exception as e:
-        print(f"Error fetching {ticker}: {e}")
+        # Silently skip errors for individual stocks
         return None
 
 

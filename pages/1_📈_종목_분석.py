@@ -315,7 +315,18 @@ def display_growth_analysis_tab(historical_metrics: dict):
     col1, col2 = st.columns(2)
     
     with col1:
-        if 'revenue_annual' in historical_metrics:
+        if 'revenue_quarterly' in historical_metrics and not historical_metrics['revenue_quarterly'].empty:
+            fig = create_trend_chart(
+                historical_metrics['revenue_quarterly'],
+                "Quarterly Revenue Trend",
+                "Revenue (USD)",
+                color="green",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        elif 'revenue_annual' in historical_metrics:
+            # Fallback to annual if quarterly not available
             fig = create_trend_chart(
                 historical_metrics['revenue_annual'],
                 "Annual Revenue Trend",
@@ -326,21 +337,34 @@ def display_growth_analysis_tab(historical_metrics: dict):
             if fig:
                 st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("Annual revenue data not available")
+            st.info("Revenue data not available")
     
     with col2:
-        if 'revenue_quarterly' in historical_metrics:
-            fig = create_trend_chart(
-                historical_metrics['revenue_quarterly'],
-                "Quarterly Revenue Trend",
-                "Revenue (USD)",
-                color="lightgreen",
-                format_as_billions=True
-            )
-            if fig:
+        if 'revenue_quarterly' in historical_metrics and not historical_metrics['revenue_quarterly'].empty:
+            # Show quarterly growth rate chart
+            quarterly_data = historical_metrics['revenue_quarterly']
+            if len(quarterly_data) >= 2:
+                growth_rates = quarterly_data.pct_change() * 100
+                fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    x=growth_rates.index,
+                    y=growth_rates.values,
+                    marker_color=['green' if x >= 0 else 'red' for x in growth_rates.values],
+                    name='QoQ Growth %'
+                ))
+                fig.update_layout(
+                    title="Quarterly Revenue Growth (QoQ)",
+                    xaxis_title="Period",
+                    yaxis_title="Growth (%)",
+                    template="plotly_dark",
+                    height=350,
+                    margin=dict(l=20, r=20, t=50, b=20)
+                )
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Insufficient data for growth calculation")
         else:
-            st.info("Quarterly revenue data not available")
+            st.info("Quarterly data not available")
     
     st.divider()
     
@@ -350,7 +374,18 @@ def display_growth_analysis_tab(historical_metrics: dict):
     pcol1, pcol2 = st.columns(2)
     
     with pcol1:
-        if 'ebitda_annual' in historical_metrics:
+        if 'ebitda_quarterly' in historical_metrics and not historical_metrics['ebitda_quarterly'].empty:
+            fig = create_trend_chart(
+                historical_metrics['ebitda_quarterly'],
+                "Quarterly EBITDA Trend",
+                "EBITDA (USD)",
+                color="blue",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        elif 'ebitda_annual' in historical_metrics:
+            # Fallback to annual
             fig = create_trend_chart(
                 historical_metrics['ebitda_annual'],
                 "Annual EBITDA Trend",

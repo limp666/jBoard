@@ -312,13 +312,25 @@ def calculate_advanced_metrics(info: Dict[str, Any], financials: Dict[str, pd.Da
     
     # 1. Valuation Metrics
     trailing_pe = safe_get(info, 'trailingPE')
+    forward_pe = safe_get(info, 'forwardPE')
     earnings_growth = safe_get(info, 'earningsGrowth')
     
-    # PEG Ratio
+    # PEG Ratio - Try multiple methods for better coverage
+    peg_ratio = None
+    
+    # Method 1: Calculate from Trailing PER
     if trailing_pe and earnings_growth and earnings_growth > 0:
-        metrics['peg_ratio'] = trailing_pe / (earnings_growth * 100)
-    else:
-        metrics['peg_ratio'] = safe_get(info, 'pegRatio')
+        peg_ratio = trailing_pe / (earnings_growth * 100)
+    
+    # Method 2: Calculate from Forward PER (if Method 1 failed)
+    elif forward_pe and earnings_growth and earnings_growth > 0:
+        peg_ratio = forward_pe / (earnings_growth * 100)
+    
+    # Method 3: Use pre-calculated value from yfinance
+    elif safe_get(info, 'pegRatio'):
+        peg_ratio = info['pegRatio']
+    
+    metrics['peg_ratio'] = peg_ratio
     
     # PSR (Price to Sales)
     metrics['price_to_sales'] = safe_get(info, 'priceToSalesTrailing12Months')

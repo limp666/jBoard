@@ -455,17 +455,28 @@ def get_historical_metrics(financials: Dict[str, pd.DataFrame]) -> Dict[str, pd.
     annual_cashflow = financials.get('annual_cashflow', pd.DataFrame())
     if not annual_cashflow.empty:
         try:
-            if 'Free Cash Flow' in annual_cashflow.index:
+            # Free Cash Flow
+            if 'FreeCashFlow' in annual_cashflow.index:
+                metrics['fcf_annual'] = annual_cashflow.loc['FreeCashFlow'].sort_index()
+            elif 'Free Cash Flow' in annual_cashflow.index:
                 metrics['fcf_annual'] = annual_cashflow.loc['Free Cash Flow'].sort_index()
                 
-            if 'Operating Cash Flow' in annual_cashflow.index:
+            # Operating Cash Flow
+            if 'OperatingCashFlow' in annual_cashflow.index:
+                metrics['operating_cf_annual'] = annual_cashflow.loc['OperatingCashFlow'].sort_index()
+            elif 'Operating Cash Flow' in annual_cashflow.index:
                 metrics['operating_cf_annual'] = annual_cashflow.loc['Operating Cash Flow'].sort_index()
                 
-            if 'Capital Expenditure' in annual_cashflow.index:
+            # Capital Expenditure
+            if 'CapitalExpenditure' in annual_cashflow.index:
+                metrics['capex_annual'] = annual_cashflow.loc['CapitalExpenditure'].sort_index()
+            elif 'Capital Expenditure' in annual_cashflow.index:
                 metrics['capex_annual'] = annual_cashflow.loc['Capital Expenditure'].sort_index()
                 
             # Share buybacks
-            if 'Repurchase Of Capital Stock' in annual_cashflow.index:
+            if 'RepurchaseOfCapitalStock' in annual_cashflow.index:
+                metrics['buybacks_annual'] = annual_cashflow.loc['RepurchaseOfCapitalStock'].sort_index()
+            elif 'Repurchase Of Capital Stock' in annual_cashflow.index:
                 metrics['buybacks_annual'] = annual_cashflow.loc['Repurchase Of Capital Stock'].sort_index()
         except Exception:
             pass
@@ -474,20 +485,35 @@ def get_historical_metrics(financials: Dict[str, pd.DataFrame]) -> Dict[str, pd.
     annual_balance = financials.get('annual_balance', pd.DataFrame())
     if not annual_balance.empty:
         try:
-            if 'Cash And Cash Equivalents' in annual_balance.index:
+            # Cash
+            if 'CashAndCashEquivalents' in annual_balance.index:
+                metrics['cash_annual'] = annual_balance.loc['CashAndCashEquivalents'].sort_index()
+            elif 'Cash And Cash Equivalents' in annual_balance.index:
                 metrics['cash_annual'] = annual_balance.loc['Cash And Cash Equivalents'].sort_index()
+            elif 'TotalCash' in annual_balance.index:
+                metrics['cash_annual'] = annual_balance.loc['TotalCash'].sort_index()
             elif 'Total Cash' in annual_balance.index:
                 metrics['cash_annual'] = annual_balance.loc['Total Cash'].sort_index()
                 
-            if 'Total Debt' in annual_balance.index:
+            # Total Debt
+            if 'TotalDebt' in annual_balance.index:
+                metrics['total_debt_annual'] = annual_balance.loc['TotalDebt'].sort_index()
+            elif 'Total Debt' in annual_balance.index:
                 metrics['total_debt_annual'] = annual_balance.loc['Total Debt'].sort_index()
                 
-            if 'Net Debt' in annual_balance.index:
+            # Net Debt
+            if 'NetDebt' in annual_balance.index:
+                metrics['net_debt_annual'] = annual_balance.loc['NetDebt'].sort_index()
+            elif 'Net Debt' in annual_balance.index:
                 metrics['net_debt_annual'] = annual_balance.loc['Net Debt'].sort_index()
                 
-            if 'Total Assets' in annual_balance.index:
+            # Total Assets
+            if 'TotalAssets' in annual_balance.index:
+                metrics['total_assets_annual'] = annual_balance.loc['TotalAssets'].sort_index()
+            elif 'Total Assets' in annual_balance.index:
                 metrics['total_assets_annual'] = annual_balance.loc['Total Assets'].sort_index()
         except Exception:
+            pass
             pass
     #Extract from quarterly cash flow
     quarterly_cashflow = financials.get('quarterly_cashflow', pd.DataFrame())

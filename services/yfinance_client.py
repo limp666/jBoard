@@ -261,6 +261,7 @@ def get_stock_info(ticker: str) -> Dict[str, Any]:
 def get_stock_financials(ticker: str) -> Dict[str, pd.DataFrame]:
     """
     Fetch comprehensive financial statements for advanced analysis.
+    Uses new yfinance API methods for reliable data fetching.
     
     Returns:
         Dictionary with keys:
@@ -273,15 +274,18 @@ def get_stock_financials(ticker: str) -> Dict[str, pd.DataFrame]:
     """
     try:
         stock = yf.Ticker(ticker)
+        
+        # Use new API methods (not deprecated attributes)
         return {
-            'quarterly_income': stock.quarterly_financials,
-            'annual_income': stock.financials,
-            'quarterly_balance': stock.quarterly_balance_sheet,
-            'annual_balance': stock.balance_sheet,
-            'quarterly_cashflow': stock.quarterly_cashflow,
-            'annual_cashflow': stock.cashflow
+            'quarterly_income': stock.get_financials(freq='quarterly'),
+            'annual_income': stock.get_financials(freq='yearly'),
+            'quarterly_balance': stock.get_balance_sheet(freq='quarterly'),
+            'annual_balance': stock.get_balance_sheet(freq='yearly'),
+            'quarterly_cashflow': stock.get_cash_flow(freq='quarterly'),
+            'annual_cashflow': stock.get_cash_flow(freq='yearly')
         }
-    except Exception:
+    except Exception as e:
+        print(f"Error fetching financials for {ticker}: {e}")
         return {
             'quarterly_income': pd.DataFrame(),
             'annual_income': pd.DataFrame(),
@@ -467,6 +471,54 @@ def get_historical_metrics(financials: Dict[str, pd.DataFrame]) -> Dict[str, pd.
                 
             if 'Total Assets' in annual_balance.index:
                 metrics['total_assets_annual'] = annual_balance.loc['Total Assets'].sort_index()
+        except Exception:
+            pass
+    #Extract from quarterly cash flow
+    quarterly_cashflow = financials.get('quarterly_cashflow', pd.DataFrame())
+    if not quarterly_cashflow.empty:
+        try:
+            if 'FreeCashFlow' in quarterly_cashflow.index:
+                metrics['fcf_quarterly'] = quarterly_cashflow.loc['FreeCashFlow'].sort_index()
+            elif 'Free Cash Flow' in quarterly_cashflow.index:
+                metrics['fcf_quarterly'] = quarterly_cashflow.loc['Free Cash Flow'].sort_index()
+                
+            if 'OperatingCashFlow' in quarterly_cashflow.index:
+                metrics['operating_cf_quarterly'] = quarterly_cashflow.loc['OperatingCashFlow'].sort_index()
+            elif 'Operating Cash Flow' in quarterly_cashflow.index:
+                metrics['operating_cf_quarterly'] = quarterly_cashflow.loc['Operating Cash Flow'].sort_index()
+                
+            if 'CapitalExpenditure' in quarterly_cashflow.index:
+                metrics['capex_quarterly'] = quarterly_cashflow.loc['CapitalExpenditure'].sort_index()
+            elif 'Capital Expenditure' in quarterly_cashflow.index:
+                metrics['capex_quarterly'] = quarterly_cashflow.loc['Capital Expenditure'].sort_index()
+        except Exception:
+            pass
+    
+    # Extract from quarterly balance sheet
+    quarterly_balance = financials.get('quarterly_balance', pd.DataFrame())
+    if not quarterly_balance.empty:
+        try:
+            if 'CashAndCashEquivalents' in quarterly_balance.index:
+                metrics['cash_quarterly'] = quarterly_balance.loc['CashAndCashEquivalents'].sort_index()
+            elif 'Cash And Cash Equivalents' in quarterly_balance.index:
+                metrics['cash_quarterly'] = quarterly_balance.loc['Cash And Cash Equivalents'].sort_index()
+            elif 'Total Cash' in quarterly_balance.index:
+                metrics['cash_quarterly'] = quarterly_balance.loc['Total Cash'].sort_index()
+                
+            if 'TotalDebt' in quarterly_balance.index:
+                metrics['total_debt_quarterly'] = quarterly_balance.loc['TotalDebt'].sort_index()
+            elif 'Total Debt' in quarterly_balance.index:
+                metrics['total_debt_quarterly'] = quarterly_balance.loc['Total Debt'].sort_index()
+                
+            if 'TotalAssets' in quarterly_balance.index:
+                metrics['total_assets_quarterly'] = quarterly_balance.loc['TotalAssets'].sort_index()
+            elif 'Total Assets' in quarterly_balance.index:
+                metrics['total_assets_quarterly'] = quarterly_balance.loc['Total Assets'].sort_index()
+                
+            if 'NetDebt' in quarterly_balance.index:
+                metrics['net_debt_quarterly'] = quarterly_balance.loc['NetDebt'].sort_index()
+            elif 'Net Debt' in quarterly_balance.index:
+                metrics['net_debt_quarterly'] = quarterly_balance.loc['Net Debt'].sort_index()
         except Exception:
             pass
     

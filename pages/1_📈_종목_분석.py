@@ -444,7 +444,18 @@ def display_cashflow_tab(historical_metrics: dict, info: dict):
     cf1, cf2 = st.columns(2)
     
     with cf1:
-        if 'fcf_annual' in historical_metrics:
+        if 'fcf_quarterly' in historical_metrics and not historical_metrics['fcf_quarterly'].empty:
+            fig = create_trend_chart(
+                historical_metrics['fcf_quarterly'],
+                "Free Cash Flow Trend (Quarterly)",
+                "FCF (USD)",
+                color="green",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        elif 'fcf_annual' in historical_metrics:
+            # Fallback to annual
             fig = create_trend_chart(
                 historical_metrics['fcf_annual'],
                 "Free Cash Flow Trend (Annual)",
@@ -458,7 +469,18 @@ def display_cashflow_tab(historical_metrics: dict, info: dict):
             st.info("FCF data not available")
     
     with cf2:
-        if 'operating_cf_annual' in historical_metrics:
+        if 'operating_cf_quarterly' in historical_metrics and not historical_metrics['operating_cf_quarterly'].empty:
+            fig = create_trend_chart(
+                historical_metrics['operating_cf_quarterly'],
+                "Operating Cash Flow Trend (Quarterly)",
+                "Operating CF (USD)",
+                color="blue",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        elif 'operating_cf_annual' in historical_metrics:
+            # Fallback to annual
             fig = create_trend_chart(
                 historical_metrics['operating_cf_annual'],
                 "Operating Cash Flow Trend (Annual)",
@@ -524,10 +546,21 @@ def display_balance_sheet_tab(historical_metrics: dict, info: dict):
     a1, a2 = st.columns(2)
     
     with a1:
-        if 'total_assets_annual' in historical_metrics:
+        if 'total_assets_quarterly' in historical_metrics and not historical_metrics['total_assets_quarterly'].empty:
+            fig = create_trend_chart(
+                historical_metrics['total_assets_quarterly'],
+                "Total Assets Trend (Quarterly)",
+                "Assets (USD)",
+                color="green",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        elif 'total_assets_annual' in historical_metrics:
+            # Fallback to annual
             fig = create_trend_chart(
                 historical_metrics['total_assets_annual'],
-                "Total Assets Trend",
+                "Total Assets Trend (Annual)",
                 "Assets (USD)",
                 color="green",
                 format_as_billions=True
@@ -538,10 +571,21 @@ def display_balance_sheet_tab(historical_metrics: dict, info: dict):
             st.info("Assets data not available")
     
     with a2:
-        if 'cash_annual' in historical_metrics:
+        if 'cash_quarterly' in historical_metrics and not historical_metrics['cash_quarterly'].empty:
+            fig = create_trend_chart(
+                historical_metrics['cash_quarterly'],
+                "Cash & Equivalents Trend (Quarterly)",
+                "Cash (USD)",
+                color="blue",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        elif 'cash_annual' in historical_metrics:
+            # Fallback to annual
             fig = create_trend_chart(
                 historical_metrics['cash_annual'],
-                "Cash & Equivalents Trend",
+                "Cash & Equivalents Trend (Annual)",
                 "Cash (USD)",
                 color="blue",
                 format_as_billions=True
@@ -559,10 +603,21 @@ def display_balance_sheet_tab(historical_metrics: dict, info: dict):
     d1, d2 = st.columns(2)
     
     with d1:
-        if 'total_debt_annual' in historical_metrics:
+        if 'total_debt_quarterly' in historical_metrics and not historical_metrics['total_debt_quarterly'].empty:
+            fig = create_trend_chart(
+                historical_metrics['total_debt_quarterly'],
+                "Total Debt Trend (Quarterly)",
+                "Debt (USD)",
+                color="red",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        elif 'total_debt_annual' in historical_metrics:
+            # Fallback to annual
             fig = create_trend_chart(
                 historical_metrics['total_debt_annual'],
-                "Total Debt Trend",
+                "Total Debt Trend (Annual)",
                 "Debt (USD)",
                 color="red",
                 format_as_billions=True

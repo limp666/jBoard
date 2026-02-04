@@ -99,11 +99,19 @@ def display_valuation_tab(info: dict, advanced_metrics: dict, sector_avg: dict =
     # Row 1: Core valuation
     c1, c2, c3, c4, c5 = st.columns(5)
     
-    c1.metric("Market Cap", f"{currency_symbol}{human_format(info.get('marketCap'))}")
+    c1.metric(
+        "Market Cap", 
+        f"{currency_symbol}{human_format(info.get('marketCap'))}",
+        help="기업의 총 가치. 주가 × 발행주식수. 기업 규모의 기준"
+    )
     c1.caption(f"Currency: {currency}")
     
     stock_pe = info.get('trailingPE')
-    c2.metric("PER (Trailing)", safe_fmt(stock_pe))
+    c2.metric(
+        "PER (Trailing)", 
+        safe_fmt(stock_pe),
+        help="주가수익비율. 주가 / 주당순이익(EPS). 낮을수록 저평가. 업종별 차이 큼"
+    )
     if sector_avg and sector_avg.get('trailing_pe'):
         sector_pe = sector_avg.get('trailing_pe')
         diff = ((stock_pe - sector_pe) / sector_pe * 100) if stock_pe and sector_pe else None
@@ -118,7 +126,11 @@ def display_valuation_tab(info: dict, advanced_metrics: dict, sector_avg: dict =
     c4.metric("PSR (Price/Sales)", safe_fmt(psr), help="시총 / 매출")
     
     stock_pbr = info.get('priceToBook')
-    c5.metric("PBR (Price/Book)", safe_fmt(stock_pbr))
+    c5.metric(
+        "PBR (Price/Book)", 
+        safe_fmt(stock_pbr),
+        help="주가순자산비율. 주가 / 주당순자산(BPS). <1이면 청산가치 이하"
+    )
     if sector_avg and sector_avg.get('price_to_book'):
         sector_pbr = sector_avg.get('price_to_book')
         diff = ((stock_pbr - sector_pbr) / sector_pbr * 100) if stock_pbr and sector_pbr else None
@@ -131,13 +143,25 @@ def display_valuation_tab(info: dict, advanced_metrics: dict, sector_avg: dict =
     ev1, ev2, ev3, ev4 = st.columns(4)
     
     ev = info.get('enterpriseValue')
-    ev1.metric("Enterprise Value", f"{currency_symbol}{human_format(ev)}")
+    ev1.metric(
+        "Enterprise Value", 
+        f"{currency_symbol}{human_format(ev)}",
+        help="시가총액 + 순부채. 인수 시 필요한 실제 금액"
+    )
     
     ev_rev = advanced_metrics.get('ev_to_revenue')
-    ev2.metric("EV / Revenue", safe_fmt(ev_rev))
+    ev2.metric(
+        "EV / Revenue", 
+        safe_fmt(ev_rev),
+        help="기업가치 / 매출. PSR과 유사하나 부채 고려. 성장주 평가에 유용"
+    )
     
     ev_ebitda = advanced_metrics.get('ev_to_ebitda')
-    ev3.metric("EV / EBITDA", safe_fmt(ev_ebitda))
+    ev3.metric(
+        "EV / EBITDA", 
+        safe_fmt(ev_ebitda),
+        help="기업가치 / EBITDA. 업종 간 비교에 유용. <10 저평가, >15 고평가 경향"
+    )
     
     fcf_yield = advanced_metrics.get('fcf_yield')
     ev4.metric("FCF Yield", safe_fmt(fcf_yield, "{:.2f}", "%"), help="Free Cash Flow / Market Cap")
@@ -159,24 +183,44 @@ def display_valuation_tab(info: dict, advanced_metrics: dict, sector_avg: dict =
     p2.metric("ROA", safe_fmt(roa * 100 if roa else None, "{:.2f}", "%"), help="총자산이익률")
     
     gross_margin = advanced_metrics.get('gross_margins')
-    p3.metric("Gross Margin", safe_fmt(gross_margin * 100 if gross_margin else None, "{:.2f}", "%"))
+    p3.metric(
+        "Gross Margin", 
+        safe_fmt(gross_margin * 100 if gross_margin else None, "{:.2f}", "%"),
+        help="(매출 - 매출원가) / 매출. 40%+ 우수. 제품 경쟁력 지표"
+    )
     
     op_margin = info.get('operatingMargins')
-    p4.metric("Operating Margin", safe_fmt(op_margin * 100 if op_margin else None, "{:.2f}", "%"))
+    p4.metric(
+        "Operating Margin", 
+        safe_fmt(op_margin * 100 if op_margin else None, "{:.2f}", "%"),
+        help="영업이익 / 매출. 본업 수익성. 15%+ 우수"
+    )
     
     net_margin = info.get('profitMargins')
-    p5.metric("Net Margin", safe_fmt(net_margin * 100 if net_margin else None, "{:.2f}", "%"))
+    p5.metric(
+        "Net Margin", 
+        safe_fmt(net_margin * 100 if net_margin else None, "{:.2f}", "%"),
+        help="순이익 / 매출. 최종 수익성. 10%+ 우수"
+    )
     
     # Row 4: EBITDA and FCF margins
     m1, m2, m3 = st.columns(3)
     
     ebitda_margin = advanced_metrics.get('ebitda_margins')
-    m1.metric("EBITDA Margin", safe_fmt(ebitda_margin * 100 if ebitda_margin else None, "{:.2f}", "%"))
+    m1.metric(
+        "EBITDA Margin", 
+        safe_fmt(ebitda_margin * 100 if ebitda_margin else None, "{:.2f}", "%"),
+        help="EBITDA / 매출. 현금창출 능력. 감가상각 제외한 순수 영업력"
+    )
     
     fcf_margin = advanced_metrics.get('fcf_margin')
     m2.metric("FCF Margin", safe_fmt(fcf_margin, "{:.2f}", "%"), help="Free Cash Flow / Revenue")
     
-    m3.metric("EBITDA", f"{currency_symbol}{human_format(info.get('ebitda'))}")
+    m3.metric(
+        "EBITDA", 
+        f"{currency_symbol}{human_format(info.get('ebitda'))}",
+        help="영업이익 + 감가상각비. Earnings Before Interest, Taxes, Depreciation, Amortization"
+    )
     
     st.divider()
     
@@ -188,7 +232,11 @@ def display_valuation_tab(info: dict, advanced_metrics: dict, sector_avg: dict =
     f1.metric("Net Debt / EBITDA", safe_fmt(net_debt_ebitda, "{:.2f}", "x"), help="< 3x 건전")
     
     debt_equity = info.get('debtToEquity')
-    f2.metric("Debt / Equity", safe_fmt(debt_equity, "{:.2f}", "%"))
+    f2.metric(
+        "Debt / Equity", 
+        safe_fmt(debt_equity, "{:.2f}", "%"),
+        help="총부채 / 자기자본 × 100. <100% 안정, >200% 위험"
+    )
     if sector_avg and sector_avg.get('debt_to_equity'):
         sector_de = sector_avg.get('debt_to_equity')
         f2.caption(f"Sector: {safe_fmt(sector_de, '{:.2f}', '%')}")
@@ -203,13 +251,25 @@ def display_valuation_tab(info: dict, advanced_metrics: dict, sector_avg: dict =
     cash1, cash2, cash3 = st.columns(3)
     
     total_cash = info.get('totalCash')
-    cash1.metric("Total Cash", f"{currency_symbol}{human_format(total_cash)}")
+    cash1.metric(
+        "Total Cash", 
+        f"{currency_symbol}{human_format(total_cash)}",
+        help="즉시 사용 가능한 현금 + 단기투자자산. 유동성의 핵심"
+    )
     
     total_debt = info.get('totalDebt')
-    cash2.metric("Total Debt", f"{currency_symbol}{human_format(total_debt)}")
+    cash2.metric(
+        "Total Debt", 
+        f"{currency_symbol}{human_format(total_debt)}",
+        help="단기부채 + 장기부채. 상환 의무가 있는 모든 부채"
+    )
     
     cash_to_mcap = advanced_metrics.get('cash_to_market_cap')
-    cash3.metric("Cash / Market Cap", safe_fmt(cash_to_mcap, "{:.2f}", "%"))
+    cash3.metric(
+        "Cash / Market Cap", 
+        safe_fmt(cash_to_mcap, "{:.2f}", "%"),
+        help="현금성자산 / 시가총액 × 100. >20% 우량, 기업 안전성 지표"
+    )
     
     st.divider()
     
@@ -218,16 +278,32 @@ def display_valuation_tab(info: dict, advanced_metrics: dict, sector_avg: dict =
     g1, g2, g3, g4 = st.columns(4)
     
     rev_growth = info.get('revenueGrowth')
-    g1.metric("Revenue Growth (YoY)", safe_fmt(rev_growth * 100 if rev_growth else None, "{:+.2f}", "%"))
+    g1.metric(
+        "Revenue Growth (YoY)", 
+        safe_fmt(rev_growth * 100 if rev_growth else None, "{:+.2f}", "%"),
+        help="전년 대비 매출 증가율. >10% 고성장, <0% 매출 감소"
+    )
     
     earn_growth = info.get('earningsGrowth')
-    g2.metric("Earnings Growth (YoY)", safe_fmt(earn_growth * 100 if earn_growth else None, "{:+.2f}", "%"))
+    g2.metric(
+        "Earnings Growth (YoY)", 
+        safe_fmt(earn_growth * 100 if earn_growth else None, "{:+.2f}", "%"),
+        help="전년 대비 순이익 증가율. 수익성 개선 추세 확인"
+    )
     
     div_yield = info.get('dividendYield')
-    g3.metric("Dividend Yield", safe_fmt(div_yield * 100 if div_yield else None, "{:.2f}", "%"))
+    g3.metric(
+        "Dividend Yield", 
+        safe_fmt(div_yield * 100 if div_yield else None, "{:.2f}", "%"),
+        help="연간 배당금 / 주가 × 100. 3%+ 고배당주"
+    )
     
     payout_ratio = info.get('payoutRatio')
-    g4.metric("Payout Ratio", safe_fmt(payout_ratio * 100 if payout_ratio else None, "{:.2f}", "%"))
+    g4.metric(
+        "Payout Ratio", 
+        safe_fmt(payout_ratio * 100 if payout_ratio else None, "{:.2f}", "%"),
+        help="배당금 / 순이익 × 100. 40-60% 적정, >80% 지속가능성 의문"
+    )
 
 
 def display_growth_analysis_tab(historical_metrics: dict):

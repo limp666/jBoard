@@ -256,6 +256,209 @@ def get_stock_info(ticker: str) -> Dict[str, Any]:
         return stock.info
     except Exception:
         return {}
+
+
+def get_stock_financials(ticker: str) -> Dict[str, pd.DataFrame]:
+    """
+    Fetch comprehensive financial statements for advanced analysis.
+    
+    Returns:
+        Dictionary with keys:
+        - 'quarterly_income': Quarterly income statement
+        - 'annual_income': Annual income statement
+        - 'quarterly_balance': Quarterly balance sheet
+        - 'annual_balance': Annual balance sheet
+        - 'quarterly_cashflow': Quarterly cash flow statement
+        - 'annual_cashflow': Annual cash flow statement
+    """
+    try:
+        stock = yf.Ticker(ticker)
+        return {
+            'quarterly_income': stock.quarterly_financials,
+            'annual_income': stock.financials,
+            'quarterly_balance': stock.quarterly_balance_sheet,
+            'annual_balance': stock.balance_sheet,
+            'quarterly_cashflow': stock.quarterly_cashflow,
+            'annual_cashflow': stock.cashflow
+        }
+    except Exception:
+        return {
+            'quarterly_income': pd.DataFrame(),
+            'annual_income': pd.DataFrame(),
+            'quarterly_balance': pd.DataFrame(),
+            'annual_balance': pd.DataFrame(),
+            'quarterly_cashflow': pd.DataFrame(),
+            'annual_cashflow': pd.DataFrame()
+        }
+
+
+def calculate_advanced_metrics(info: Dict[str, Any], financials: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
+    """
+    Calculate advanced/derived metrics from basic info and financials.
+    
+    Args:
+        info: Basic stock info from get_stock_info()
+        financials: Financial statements from get_stock_financials()
+        
+    Returns:
+        Dictionary with calculated metrics
+    """
+    metrics = {}
+    
+    # Safe getters
+    def safe_get(d, key, default=None):
+        val = d.get(key, default)
+        return val if val is not None else default
+    
+    # 1. Valuation Metrics
+    trailing_pe = safe_get(info, 'trailingPE')
+    earnings_growth = safe_get(info, 'earningsGrowth')
+    
+    # PEG Ratio
+    if trailing_pe and earnings_growth and earnings_growth > 0:
+        metrics['peg_ratio'] = trailing_pe / (earnings_growth * 100)
+    else:
+        metrics['peg_ratio'] = safe_get(info, 'pegRatio')
+    
+    # PSR (Price to Sales)
+    metrics['price_to_sales'] = safe_get(info, 'priceToSalesTrailing12Months')
+    
+    # EV metrics
+    metrics['ev_to_revenue'] = safe_get(info, 'enterpriseToRevenue')
+    metrics['ev_to_ebitda'] = safe_get(info, 'enterpriseToEbitda')
+    
+    # FCF Yield
+    fcf = safe_get(info, 'freeCashflow')
+    market_cap = safe_get(info, 'marketCap')
+    if fcf and market_cap and market_cap > 0:
+        metrics['fcf_yield'] = (fcf / market_cap) * 100
+    else:
+        metrics['fcf_yield'] = None
+    
+    # 2. Financial Health
+    total_cash = safe_get(info, 'totalCash', 0)
+    total_debt = safe_get(info, 'totalDebt', 0)
+    ebitda = safe_get(info, 'ebitda')
+    
+    # Net Debt
+    net_debt = total_debt - total_cash
+    metrics['net_debt'] = net_debt
+    
+    # Net Debt / EBITDA
+    if ebitda and ebitda > 0:
+        metrics['net_debt_to_ebitda'] = net_debt / ebitda
+    else:
+        metrics['net_debt_to_ebitda'] = None
+    
+    # Cash to Market Cap
+    if market_cap and market_cap > 0:
+        metrics['cash_to_market_cap'] = (total_cash / market_cap) * 100
+    else:
+        metrics['cash_to_market_cap'] = None
+    
+    # 3. Profitability
+    metrics['roa'] = safe_get(info, 'returnOnAssets')
+    metrics['roe'] = safe_get(info, 'returnOnEquity')
+    metrics['gross_margins'] = safe_get(info, 'grossMargins')
+    metrics['ebitda_margins'] = safe_get(info, 'ebitdaMargins')
+    
+    # FCF Margin
+    total_revenue = safe_get(info, 'totalRevenue')
+    if fcf and total_revenue and total_revenue > 0:
+        metrics['fcf_margin'] = (fcf / total_revenue) * 100
+    else:
+        metrics['fcf_margin'] = None
+    
+    return metrics
+
+
+def get_historical_metrics(financials: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
+    """
+    Extract time-series metrics from financial statements for charting.
+    
+    Args:
+        financials: Output from get_stock_financials()
+        
+    Returns:
+        Dictionary with time-series DataFrames for various metrics
+    """
+    metrics = {}
+    
+    # Extract from annual income statement
+    annual_income = financials.get('annual_income', pd.DataFrame())
+    if not annual_income.empty:
+        # Try to get key metrics (yfinance naming can vary)
+        try:
+            # Revenue
+            if 'Total Revenue' in annual_income.index:
+                metrics['revenue_annual'] = annual_income.loc['Total Revenue'].sort_index()
+            
+            # EBITDA
+            if 'EBITDA' in annual_income.index:
+                metrics['ebitda_annual'] = annual_income.loc['EBITDA'].sort_index()
+            
+            # Operating Income
+            if 'Operating Income' in annual_income.index:
+                metrics['operating_income_annual'] = annual_income.loc['Operating Income'].sort_index()
+                
+            # Net Income
+            if 'Net Income' in annual_income.index:
+                metrics['net_income_annual'] = annual_income.loc['Net Income'].sort_index()
+        except Exception:
+            pass
+    
+    # Extract from quarterly income statement
+    quarterly_income = financials.get('quarterly_income', pd.DataFrame())
+    if not quarterly_income.empty:
+        try:
+            if 'Total Revenue' in quarterly_income.index:
+                metrics['revenue_quarterly'] = quarterly_income.loc['Total Revenue'].sort_index()
+                
+            if 'EBITDA' in quarterly_income.index:
+                metrics['ebitda_quarterly'] = quarterly_income.loc['EBITDA'].sort_index()
+        except Exception:
+            pass
+    
+    # Extract from cash flow
+    annual_cashflow = financials.get('annual_cashflow', pd.DataFrame())
+    if not annual_cashflow.empty:
+        try:
+            if 'Free Cash Flow' in annual_cashflow.index:
+                metrics['fcf_annual'] = annual_cashflow.loc['Free Cash Flow'].sort_index()
+                
+            if 'Operating Cash Flow' in annual_cashflow.index:
+                metrics['operating_cf_annual'] = annual_cashflow.loc['Operating Cash Flow'].sort_index()
+                
+            if 'Capital Expenditure' in annual_cashflow.index:
+                metrics['capex_annual'] = annual_cashflow.loc['Capital Expenditure'].sort_index()
+                
+            # Share buybacks
+            if 'Repurchase Of Capital Stock' in annual_cashflow.index:
+                metrics['buybacks_annual'] = annual_cashflow.loc['Repurchase Of Capital Stock'].sort_index()
+        except Exception:
+            pass
+    
+    # Extract from balance sheet
+    annual_balance = financials.get('annual_balance', pd.DataFrame())
+    if not annual_balance.empty:
+        try:
+            if 'Cash And Cash Equivalents' in annual_balance.index:
+                metrics['cash_annual'] = annual_balance.loc['Cash And Cash Equivalents'].sort_index()
+            elif 'Total Cash' in annual_balance.index:
+                metrics['cash_annual'] = annual_balance.loc['Total Cash'].sort_index()
+                
+            if 'Total Debt' in annual_balance.index:
+                metrics['total_debt_annual'] = annual_balance.loc['Total Debt'].sort_index()
+                
+            if 'Net Debt' in annual_balance.index:
+                metrics['net_debt_annual'] = annual_balance.loc['Net Debt'].sort_index()
+                
+            if 'Total Assets' in annual_balance.index:
+                metrics['total_assets_annual'] = annual_balance.loc['Total Assets'].sort_index()
+        except Exception:
+            pass
+    
+    return metrics
         
 def search_symbols(query: str, limit: int = 10) -> List[Dict[str, str]]:
     """

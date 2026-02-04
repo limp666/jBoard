@@ -3,72 +3,536 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from services import yfinance_client
-from services import yfinance_client
+from services.yfinance_client import (
+    get_stock_info,
+    get_stock_history,
+    get_stock_financials,
+    calculate_advanced_metrics,
+    get_historical_metrics,
+    search_symbols
+)
 
 st.set_page_config(page_title="종목 분석", page_icon="📈", layout="wide")
 
-def display_corporate_analysis(info: dict):
-    """Display fundamental data and company info."""
-    st.subheader("🏢 기업 분석 (Corporate Analysis)")
-    
-    # prevent errors if keys are missing
-    currency = info.get('currency', 'USD')
-    
-    # 1. Company Summary
-    with st.expander("기업 개요 및 섹터 정보", expanded=True):
-        c1, c2 = st.columns([1, 3])
-        with c1:
-            st.metric("섹터 (Sector)", info.get('sector', 'N/A'))
-        with c2:
-            st.metric("산업 (Industry)", info.get('industry', 'N/A'))
-        st.write(info.get('longBusinessSummary', '기업 설명 정보가 없습니다.'))
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
 
-    # 2. Key Fundamentals
-    st.markdown("#### 🔑 핵심 재무 지표 (Fundamentals)")
-    
-    f1, f2, f3, f4, f5 = st.columns(5)
-    
-    # Helper to safe format
-    def safe_fmt(val, fmt="{:,.2f}", suffix=""):
-        if val is None: return "N/A"
+def safe_fmt(val, fmt="{:,.2f}", suffix=""):
+    """Safely format numeric values"""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return "N/A"
+    try:
         return fmt.format(val) + suffix
+    except:
+        return "N/A"
 
-    def human_format(num):
-        if num is None: return "N/A"
+def human_format(num):
+    """Format large numbers in human-readable format (K, M, B, T)"""
+    if num is None or pd.isna(num):
+        return "N/A"
+    try:
         num = float('{:.3g}'.format(num))
         magnitude = 0
         while abs(num) >= 1000:
             magnitude += 1
             num /= 1000.0
         return '{}{}'.format('{:f}'.format(num).rstrip('0').rstrip('.'), ['', 'K', 'M', 'B', 'T'][magnitude])
+    except:
+        return "N/A"
 
-    # Determine currency symbol
+def create_trend_chart(data: pd.Series, title: str, y_label: str, color: str = "blue", format_as_billions: bool = False):
+    """Create a line chart for time-series data"""
+    if data.empty:
+        return None
+    
+    # Sort by index (date)
+    data = data.sort_index()
+    
+    # Format values for display
+    if format_as_billions:
+        y_values = data / 1e9  # Convert to billions
+        y_label = f"{y_label} (Billions)"
+    else:
+        y_values = data
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=data.index,
+        y=y_values,
+        mode='lines+markers',
+        line=dict(color=color, width=2),
+        marker=dict(size=8),
+        name=title
+    ))
+    
+    fig.update_layout(
+        title=title,
+        xaxis_title="Period",
+        yaxis_title=y_label,
+        template="plotly_dark",
+        height=350,
+        margin=dict(l=20, r=20, t=50, b=20)
+    )
+    
+    return fig
+
+# ============================================================================
+# DISPLAY FUNCTIONS FOR TABS
+# ============================================================================
+
+def display_valuation_tab(info: dict, advanced_metrics: dict):
+    """Tab 1: Core valuation metrics"""
+    st.subheader("💰 Valuation Metrics (밸류에이션)")
+    
+    # Currency handling
+    currency = info.get('currency', 'USD')
     currency_symbol = "$" if currency == "USD" else "₩" if currency == "KRW" else currency + " "
-
-    f1.metric("시가총액 (Market Cap)", f"{currency_symbol}{human_format(info.get('marketCap'))}")
-    f1.caption(f"통화: {currency}")
     
-    f2.metric("PER (주가수익비율)", safe_fmt(info.get('trailingPE')), help="낮을수록 저평가 가능성")
-    f2.caption(f"Forward PER: {safe_fmt(info.get('forwardPE'))}")
+    # Row 1: Core valuation
+    c1, c2, c3, c4, c5 = st.columns(5)
     
-    f3.metric("PBR (주가순자산비율)", safe_fmt(info.get('priceToBook')), help="1 미만이면 자산가치 대비 저평가")
+    c1.metric("Market Cap", f"{currency_symbol}{human_format(info.get('marketCap'))}")
+    c1.caption(f"Currency: {currency}")
+    
+    c2.metric("PER (Trailing)", safe_fmt(info.get('trailingPE')))
+    c2.caption(f"Forward: {safe_fmt(info.get('forwardPE'))}")
+    
+    peg = advanced_metrics.get('peg_ratio')
+    c3.metric("PEG Ratio", safe_fmt(peg), help="PER / Earnings Growth. <1은 저평가")
+    
+    psr = advanced_metrics.get('price_to_sales')
+    c4.metric("PSR (Price/Sales)", safe_fmt(psr), help="시총 / 매출")
+    
+    c5.metric("PBR (Price/Book)", safe_fmt(info.get('priceToBook')))
+    
+    st.divider()
+    
+    # Row 2: Enterprise Value metrics
+    st.markdown("#### 🏢 Enterprise Value Metrics")
+    ev1, ev2, ev3, ev4 = st.columns(4)
+    
+    ev = info.get('enterpriseValue')
+    ev1.metric("Enterprise Value", f"{currency_symbol}{human_format(ev)}")
+    
+    ev_rev = advanced_metrics.get('ev_to_revenue')
+    ev2.metric("EV / Revenue", safe_fmt(ev_rev))
+    
+    ev_ebitda = advanced_metrics.get('ev_to_ebitda')
+    ev3.metric("EV / EBITDA", safe_fmt(ev_ebitda))
+    
+    fcf_yield = advanced_metrics.get('fcf_yield')
+    ev4.metric("FCF Yield", safe_fmt(fcf_yield, "{:.2f}", "%"), help="Free Cash Flow / Market Cap")
+    
+    st.divider()
+    
+    # Row 3: Profitability
+    st.markdown("#### 📊 Profitability & Efficiency (수익성 & 효율성)")
+    p1, p2, p3, p4, p5 = st.columns(5)
     
     roe = info.get('returnOnEquity')
-    f4.metric("ROE (자기자본이익률)", safe_fmt(roe * 100 if roe else None, "{:.2f}", "%"), help="높을수록 자본 효율성 좋음")
+    p1.metric("ROE", safe_fmt(roe * 100 if roe else None, "{:.2f}", "%"), help="자기자본이익률")
     
-    div_yield = info.get('dividendYield')
-    f5.metric("배당수익률", safe_fmt(div_yield * 100 if div_yield else None, "{:.2f}", "%"))
-
-    # Growth & Margins
-    st.markdown("#### 📈 성장성 및 수익성")
+    roa = advanced_metrics.get('roa')
+    p2.metric("ROA", safe_fmt(roa * 100 if roa else None, "{:.2f}", "%"), help="총자산이익률")
+    
+    gross_margin = advanced_metrics.get('gross_margins')
+    p3.metric("Gross Margin", safe_fmt(gross_margin * 100 if gross_margin else None, "{:.2f}", "%"))
+    
+    op_margin = info.get('operatingMargins')
+    p4.metric("Operating Margin", safe_fmt(op_margin * 100 if op_margin else None, "{:.2f}", "%"))
+    
+    net_margin = info.get('profitMargins')
+    p5.metric("Net Margin", safe_fmt(net_margin * 100 if net_margin else None, "{:.2f}", "%"))
+    
+    # Row 4: EBITDA and FCF margins
+    m1, m2, m3 = st.columns(3)
+    
+    ebitda_margin = advanced_metrics.get('ebitda_margins')
+    m1.metric("EBITDA Margin", safe_fmt(ebitda_margin * 100 if ebitda_margin else None, "{:.2f}", "%"))
+    
+    fcf_margin = advanced_metrics.get('fcf_margin')
+    m2.metric("FCF Margin", safe_fmt(fcf_margin, "{:.2f}", "%"), help="Free Cash Flow / Revenue")
+    
+    m3.metric("EBITDA", f"{currency_symbol}{human_format(info.get('ebitda'))}")
+    
+    st.divider()
+    
+    # Row 5: Financial Health
+    st.markdown("#### 🏦 Financial Health (재무 건전성)")
+    f1, f2, f3, f4 = st.columns(4)
+    
+    net_debt_ebitda = advanced_metrics.get('net_debt_to_ebitda')
+    f1.metric("Net Debt / EBITDA", safe_fmt(net_debt_ebitda, "{:.2f}", "x"), help="< 3x 건전")
+    
+    debt_equity = info.get('debtToEquity')
+    f2.metric("Debt / Equity", safe_fmt(debt_equity, "{:.2f}", "%"))
+    
+    current_ratio = info.get('currentRatio')
+    f3.metric("Current Ratio", safe_fmt(current_ratio), help="> 1.0 건전")
+    
+    quick_ratio = info.get('quickRatio')
+    f4.metric("Quick Ratio", safe_fmt(quick_ratio), help="> 1.0 건전")
+    
+    # Row 6: Cash position
+    cash1, cash2, cash3 = st.columns(3)
+    
+    total_cash = info.get('totalCash')
+    cash1.metric("Total Cash", f"{currency_symbol}{human_format(total_cash)}")
+    
+    total_debt = info.get('totalDebt')
+    cash2.metric("Total Debt", f"{currency_symbol}{human_format(total_debt)}")
+    
+    cash_to_mcap = advanced_metrics.get('cash_to_market_cap')
+    cash3.metric("Cash / Market Cap", safe_fmt(cash_to_mcap, "{:.2f}", "%"))
+    
+    st.divider()
+    
+    # Row 7: Growth & Shareholder Returns
+    st.markdown("#### 📈 Growth & Returns")
     g1, g2, g3, g4 = st.columns(4)
     
-    g1.metric("매출 성장률 (YoY)", safe_fmt((info.get('revenueGrowth') or 0) * 100, "{:+.2f}", "%"))
-    g2.metric("이익 성장률 (YoY)", safe_fmt((info.get('earningsGrowth') or 0) * 100, "{:+.2f}", "%"))
-    g3.metric("영업이익률", safe_fmt((info.get('operatingMargins') or 0) * 100, "{:.2f}", "%"))
-    g4.metric("순이익률", safe_fmt((info.get('profitMargins') or 0) * 100, "{:.2f}", "%"))
+    rev_growth = info.get('revenueGrowth')
+    g1.metric("Revenue Growth (YoY)", safe_fmt(rev_growth * 100 if rev_growth else None, "{:+.2f}", "%"))
+    
+    earn_growth = info.get('earningsGrowth')
+    g2.metric("Earnings Growth (YoY)", safe_fmt(earn_growth * 100 if earn_growth else None, "{:+.2f}", "%"))
+    
+    div_yield = info.get('dividendYield')
+    g3.metric("Dividend Yield", safe_fmt(div_yield * 100 if div_yield else None, "{:.2f}", "%"))
+    
+    payout_ratio = info.get('payoutRatio')
+    g4.metric("Payout Ratio", safe_fmt(payout_ratio * 100 if payout_ratio else None, "{:.2f}", "%"))
 
+
+def display_growth_analysis_tab(historical_metrics: dict):
+    """Tab 2: Growth trends and margin analysis"""
+    st.subheader("📈 Growth Analysis (성장 분석)")
+    
+    # Revenue trends
+    st.markdown("#### 💵 Revenue Trends")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if 'revenue_annual' in historical_metrics:
+            fig = create_trend_chart(
+                historical_metrics['revenue_annual'],
+                "Annual Revenue Trend",
+                "Revenue (USD)",
+                color="green",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Annual revenue data not available")
+    
+    with col2:
+        if 'revenue_quarterly' in historical_metrics:
+            fig = create_trend_chart(
+                historical_metrics['revenue_quarterly'],
+                "Quarterly Revenue Trend",
+                "Revenue (USD)",
+                color="lightgreen",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Quarterly revenue data not available")
+    
     st.divider()
+    
+    # Profitability trends
+    st.markdown("#### 💰 Profitability Trends")
+    
+    pcol1, pcol2 = st.columns(2)
+    
+    with pcol1:
+        if 'ebitda_annual' in historical_metrics:
+            fig = create_trend_chart(
+                historical_metrics['ebitda_annual'],
+                "Annual EBITDA Trend",
+                "EBITDA (USD)",
+                color="blue",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("EBITDA data not available")
+    
+    with pcol2:
+        if 'net_income_annual' in historical_metrics:
+            fig = create_trend_chart(
+                historical_metrics['net_income_annual'],
+                "Annual Net Income Trend",
+                "Net Income (USD)",
+                color="purple",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Net income data not available")
+
+
+def display_cashflow_tab(historical_metrics: dict, info: dict):
+    """Tab 3: Cash flow analysis"""
+    st.subheader("💰 Cash Flow Analysis (현금 흐름 분석)")
+    
+    currency = info.get('currency', 'USD')
+    currency_symbol = "$" if currency == "USD" else "₩" if currency == "KRW" else currency + " "
+    
+    # Current cash flow metrics
+    st.markdown("#### 📊 Current Metrics")
+    c1, c2, c3 = st.columns(3)
+    
+    fcf = info.get('freeCashflow')
+    c1.metric("Free Cash Flow (TTM)", f"{currency_symbol}{human_format(fcf)}")
+    
+    op_cf = info.get('operatingCashflow')
+    c2.metric("Operating Cash Flow (TTM)", f"{currency_symbol}{human_format(op_cf)}")
+    
+    if fcf and op_cf and op_cf > 0:
+        fcf_conversion = (fcf / op_cf) * 100
+        c3.metric("FCF Conversion", f"{fcf_conversion:.1f}%", help="FCF / Operating CF")
+    else:
+        c3.metric("FCF Conversion", "N/A")
+    
+    st.divider()
+    
+    # Historical cash flow trends
+    st.markdown("#### 📈 Cash Flow Trends")
+    
+    cf1, cf2 = st.columns(2)
+    
+    with cf1:
+        if 'fcf_annual' in historical_metrics:
+            fig = create_trend_chart(
+                historical_metrics['fcf_annual'],
+                "Free Cash Flow Trend (Annual)",
+                "FCF (USD)",
+                color="green",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("FCF data not available")
+    
+    with cf2:
+        if 'operating_cf_annual' in historical_metrics:
+            fig = create_trend_chart(
+                historical_metrics['operating_cf_annual'],
+                "Operating Cash Flow Trend (Annual)",
+                "Operating CF (USD)",
+                color="blue",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Operating CF data not available")
+    
+    st.divider()
+    
+    # Capital Allocation
+    st.markdown("#### 💸 Capital Allocation")
+    
+    ca1, ca2 = st.columns(2)
+    
+    with ca1:
+        if 'capex_annual' in historical_metrics:
+            # Make CapEx positive for display (it's usually negative)
+            capex_data = -historical_metrics['capex_annual']
+            fig = create_trend_chart(
+                capex_data,
+                "Capital Expenditure Trend",
+                "CapEx (USD)",
+                color="orange",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("CapEx data not available")
+    
+    with ca2:
+        if 'buybacks_annual' in historical_metrics:
+            # Make buybacks positive
+            buybacks_data = -historical_metrics['buybacks_annual']
+            fig = create_trend_chart(
+                buybacks_data,
+                "Share Buybacks Trend",
+                "Buybacks (USD)",
+                color="red",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Buyback data not available")
+
+
+def display_balance_sheet_tab(historical_metrics: dict, info: dict):
+    """Tab 4: Balance sheet trends"""
+    st.subheader("🏦 Balance Sheet (재무상태)")
+    
+    currency = info.get('currency', 'USD')
+    currency_symbol = "$" if currency == "USD" else "₩" if currency == "KRW" else currency + " "
+    
+    # Assets & Cash
+    st.markdown("#### 💵 Assets & Cash Position")
+    
+    a1, a2 = st.columns(2)
+    
+    with a1:
+        if 'total_assets_annual' in historical_metrics:
+            fig = create_trend_chart(
+                historical_metrics['total_assets_annual'],
+                "Total Assets Trend",
+                "Assets (USD)",
+                color="green",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Assets data not available")
+    
+    with a2:
+        if 'cash_annual' in historical_metrics:
+            fig = create_trend_chart(
+                historical_metrics['cash_annual'],
+                "Cash & Equivalents Trend",
+                "Cash (USD)",
+                color="blue",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Cash data not available")
+    
+    st.divider()
+    
+    # Debt Position
+    st.markdown("#### 📊 Debt Position")
+    
+    d1, d2 = st.columns(2)
+    
+    with d1:
+        if 'total_debt_annual' in historical_metrics:
+            fig = create_trend_chart(
+                historical_metrics['total_debt_annual'],
+                "Total Debt Trend",
+                "Debt (USD)",
+                color="red",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Debt data not available")
+    
+    with d2:
+        if 'net_debt_annual' in historical_metrics:
+            fig = create_trend_chart(
+                historical_metrics['net_debt_annual'],
+                "Net Debt Trend",
+                "Net Debt (USD)",
+                color="orange",
+                format_as_billions=True
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Net debt data not available")
+
+
+def display_technical_analysis_tab(df: pd.DataFrame, ticker: str):
+    """Tab 5: Technical analysis (existing functionality)"""
+    st.subheader("📊 Technical Analysis (기술적 분석)")
+    
+    if df.empty:
+        st.warning("No price data available for technical analysis")
+        return
+    
+    # Create chart
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
+                        vertical_spacing=0.03, row_heights=[0.6, 0.2, 0.2])
+
+    # 1. Candlestick & MA
+    fig.add_trace(go.Candlestick(
+        x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
+        name='OHLC'
+    ), row=1, col=1)
+    
+    # Add MAs
+    colors = {20: 'green', 60: 'orange', 120: 'purple', 200: 'red'}
+    for ma, color in colors.items():
+        if f'SMA_{ma}' in df.columns:
+            fig.add_trace(go.Scatter(x=df.index, y=df[f'SMA_{ma}'], 
+                                     line=dict(color=color, width=1), name=f'SMA {ma}'), row=1, col=1)
+
+    # 2. Volume
+    vol_colors = ['red' if row['Open'] - row['Close'] >= 0 else 'green' for index, row in df.iterrows()]
+    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=vol_colors, name='Volume'), row=2, col=1)
+    
+    # 3. MACD
+    fig.add_trace(go.Scatter(x=df.index, y=df['MACD'], line=dict(color='blue', width=1), name='MACD'), row=3, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Signal'], line=dict(color='orange', width=1), name='Signal'), row=3, col=1)
+    fig.add_trace(go.Bar(x=df.index, y=df['MACD_Hist'], marker_color='gray', name='Histogram'), row=3, col=1)
+
+    fig.update_layout(
+        title=f"{ticker} Technical Analysis",
+        xaxis_rangeslider_visible=False,
+        height=800,
+        template="plotly_dark",
+        margin=dict(l=20, r=20, t=50, b=20)
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Technical indicators summary
+    if not df.empty:
+        last = df.iloc[-1]
+        current_price = last['Close']
+        
+        st.markdown("#### 📊 Current Technical Indicators")
+        t1, t2, t3, t4 = st.columns(4)
+        
+        t1.metric("Current Price", f"${current_price:.2f}")
+        t1.caption(f"MA 20: ${last.get('SMA_20', 0):.2f}")
+        
+        if 'RSI' in df.columns:
+            rsi = last['RSI']
+            t2.metric("RSI (14)", f"{rsi:.1f}")
+            if rsi < 30:
+                t2.caption("🔵 Oversold")
+            elif rsi > 70:
+                t2.caption("🔴 Overbought")
+            else:
+                t2.caption("⚪ Neutral")
+        
+        if 'MACD' in df.columns and 'MACD_Signal' in df.columns:
+            macd = last['MACD']
+            signal = last['MACD_Signal']
+            t3.metric("MACD", f"{macd:.2f}")
+            if macd > signal:
+                t3.caption("🟢 Bullish")
+            else:
+                t3.caption("🔴 Bearish")
+        
+        volume = last['Volume']
+        avg_vol = df['Volume'].tail(20).mean()
+        t4.metric("Volume", human_format(volume))
+        vol_ratio = (volume / avg_vol) if avg_vol > 0 else 0
+        t4.caption(f"{vol_ratio:.1f}x vs 20D avg")
+
+# ============================================================================
+# TECHNICAL INDICATOR CALCULATIONS
+# ============================================================================
 
 def calculate_indicators(df: pd.DataFrame, macd_fast=12, macd_slow=26, macd_sig=9):
     """Calculate MAs, RSI, MACD, Volume MA for the dataframe."""
@@ -97,235 +561,119 @@ def calculate_indicators(df: pd.DataFrame, macd_fast=12, macd_slow=26, macd_sig=
     
     return df
 
-def render_chart(df: pd.DataFrame, ticker: str):
-    """Draw candlestick chart with selectable indicators."""
-    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
-                        vertical_spacing=0.03, row_heights=[0.6, 0.2, 0.2])
-
-    # 1. Candlestick & MA
-    fig.add_trace(go.Candlestick(
-        x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
-        name='OHLC'
-    ), row=1, col=1)
-    
-    # Add MAs
-    colors = {20: 'green', 60: 'orange', 120: 'purple', 200: 'red'}
-    for ma, color in colors.items():
-        if f'SMA_{ma}' in df.columns:
-            fig.add_trace(go.Scatter(x=df.index, y=df[f'SMA_{ma}'], 
-                                     line=dict(color=color, width=1), name=f'SMA {ma}'), row=1, col=1)
-
-    # 2. Volume
-    vol_colors = ['red' if row['Open'] - row['Close'] >= 0 else 'green' for index, row in df.iterrows()]
-    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=vol_colors, name='Volume'), row=2, col=1)
-    
-    # 3. MACD
-    fig.add_trace(go.Scatter(x=df.index, y=df['MACD'], line=dict(color='blue', width=1), name='MACD'), row=3, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Signal'], line=dict(color='orange', width=1), name='Signal'), row=3, col=1)
-    fig.add_trace(go.Bar(x=df.index, y=df['MACD_Hist'], marker_color='gray', name='Histogram'), row=3, col=1)
-
-    fig.update_layout(
-        title=f"{ticker} 기술적 분석 차트",
-        xaxis_rangeslider_visible=False,
-        height=800,
-        template="plotly_dark",
-        margin=dict(l=20, r=20, t=50, b=20)
-    )
-    st.plotly_chart(fig, width='stretch')
+# ============================================================================
+# MAIN APP
+# ============================================================================
 
 def main():
-    st.title("📈 종목 분석 (Advanced)")
+    st.title("📈 Advanced Stock Analysis (고급 종목 분석)")
+    st.caption("Comprehensive financial analysis with institutional-grade metrics")
     
     # --- Sidebar Input ---
     with st.sidebar:
-        st.header("🔍 설정 (Settings)")
+        st.header("🔍 Stock Search")
         
         # Ticker Search UI
-        search_query = st.text_input("종목 검색 (티커/회사명)", placeholder="예: Apple, Tesla, NVDA")
+        search_query = st.text_input("Search (Ticker/Company)", placeholder="e.g., Apple, Tesla, NVDA")
         
-        # Default to a safe value
-        ticker = "BTC-USD" 
+        ticker = None
         
         if search_query:
-            results = yfinance_client.search_symbols(search_query)
+            results = search_symbols(search_query)
             if results:
-                # Create a list of display strings
                 options = [r['display'] for r in results]
-                selected_option = st.selectbox("검색 결과 선택", options)
+                selected_option = st.selectbox("Select from results", options)
                 
-                # Find the symbol for the selected option
                 for r in results:
                     if r['display'] == selected_option:
                         ticker = r['symbol']
                         break
             else:
-                st.warning("경고: 검색 결과가 없습니다. 정확한 티커를 입력해보세요.")
-                ticker = search_query.upper() # Fallback to manual input
+                st.warning("No results found. Try exact ticker.")
+                ticker = search_query.upper()
         else:
-             st.info("👆 위 검색창에 종목을 입력하세요.")
-             ticker = None # Don't analyze yet if empty
-             
-        
-        st.divider()
-        st.markdown("### ⚙️ 매수/매도 조건 설정")
-        
-        # MA Conditions (Uptrend)
-        st.markdown("**🟢 상승/지지 조건 (Uptrend)**")
-        check_ma20_up = st.checkbox("가격 > MA 20", value=True)
-        check_ma60_up = st.checkbox("가격 > MA 60", value=True)
-        check_ma200_up = st.checkbox("가격 > MA 200 (장기 상승)", value=False)
-        check_goldencross = st.checkbox("골든크로스 (MA20 > MA60)", value=True)
-        
-        # MA Conditions (Downtrend)
-        st.markdown("**🔴 하락/저항 조건 (Downtrend)**")
-        check_ma20_down = st.checkbox("가격 < MA 20", value=False)
-        check_ma60_down = st.checkbox("가격 < MA 60", value=False)
-        check_ma120_down = st.checkbox("가격 < MA 120", value=False)
-        check_ma200_down = st.checkbox("가격 < MA 200 (장기 하락)", value=False)
-        check_deadcross = st.checkbox("데드크로스 (MA20 < MA60)", value=False)
-        check_reverse_arr = st.checkbox("역배열 (20 < 60 < 120 < 200)", value=False)
-        
-        # MACD Conditions
-        st.markdown("**MACD**")
-        check_macd_bull = st.checkbox("MACD > Signal (상승 추세)", value=True)
-        check_macd_pos = st.checkbox("MACD > 0 (0선 돌파)", value=False)
-        
-        # RSI Conditions
-        st.markdown("**RSI (상대강도지수)**")
-        rsi_buy_thresh = st.slider("매수 기준 (RSI < X)", 0, 100, 40)
-        rsi_sell_thresh = st.slider("매도(과열) 기준 (RSI > X)", 0, 100, 70)
-        
-        # Volume Conditions
-        st.markdown("**거래량 (Volume)**")
-        vol_mul = st.number_input("평균 대비 급증 배수", value=1.5, step=0.1)
-        check_vol_spike = st.checkbox(f"거래량 > {vol_mul}배 (Vol MA 20)", value=False)
+            st.info("👆 Enter a ticker or company name above")
+            ticker = None
 
     if not ticker:
-        st.info("좌측 사이드바에서 티커를 입력해주세요.")
+        # Show welcome screen with instructions
+        st.info("📌 Use the sidebar to search for a stock to analyze")
+        st.markdown("""
+        ### Features:
+        - **📊 Core Metrics**: Comprehensive valuation, profitability, and financial health
+        - **📈 Growth Analysis**: Revenue and profitability trends over time
+        - **💰 Cash Flow**: FCF, operating cash flow, and capital allocation
+        - **🏦 Balance Sheet**: Assets, debt, and financial position trends
+        - **📉 Technical Analysis**: Charts with indicators (MA, RSI, MACD)
+        """)
         return
 
     # --- Fetch Data ---
-    with st.spinner(f"{ticker} 데이터 분석 중..."):
-        # 1. Info
-        info = yfinance_client.get_stock_info(ticker)
-        if not info:
-            st.error("티커 정보를 가져올 수 없습니다.")
+    with st.spinner(f"Analyzing {ticker}..."):
+        # 1. Basic Info
+        info = get_stock_info(ticker)
+        if not info or len(info) < 5:
+            st.error("Unable to fetch stock data. Please check the ticker.")
             return
 
-        # 2. History (Enough for 200 MA)
-        df = yfinance_client.get_stock_history(ticker, period="2y")
-        if df.empty:
-            st.error("주가 데이터를 가져올 수 없습니다.")
-            return
-            
-        # Calculate Indicators
-        df = calculate_indicators(df)
+        # 2. Price History (for technical analysis)
+        df = get_stock_history(ticker, period="2y")
+        if not df.empty:
+            df = calculate_indicators(df)
         
-        # Current Data Point
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
-        current_price = last['Close']
+        # 3. Financial Statements
+        financials = get_stock_financials(ticker)
         
-        # --- Corporate Analysis Section ---
-        display_corporate_analysis(info)
+        # 4. Calculate Advanced Metrics
+        advanced_metrics = calculate_advanced_metrics(info, financials)
         
-        # --- Technical Analysis Section ---
-        st.subheader("🛠 매수/매도 타이밍 분석 (Timing Analysis)")
+        # 5. Extract Historical Metrics
+        historical_metrics = get_historical_metrics(financials)
         
-        c1, c2 = st.columns([1, 2])
-        
-        with c1:
-            st.markdown("#### ⚡ 현재 상태 체크리스트")
-            st.caption("설정한 조건 만족 여부")
-            
-            satisfied_count = 0
-            total_conditions = 0
-            
-            def check_cond(label, is_met, value_text=""):
-                icon = "✅" if is_met else "❌"
-                color = "green" if is_met else "red"
-                st.markdown(f"{icon} **{label}** : :{color}[{'만족' if is_met else '미충족'}] {value_text}")
-                return 1 if is_met else 0
-            
-            # 1. MA (Uptrend)
-            if check_ma20_up:
-                total_conditions += 1
-                satisfied_count += check_cond("가격 > MA 20", current_price > last['SMA_20'], f"(${last['SMA_20']:.2f})")
-            
-            if check_ma60_up:
-                total_conditions += 1
-                satisfied_count += check_cond("가격 > MA 60", current_price > last['SMA_60'], f"(${last['SMA_60']:.2f})")
-                
-            if check_ma200_up:
-                total_conditions += 1
-                satisfied_count += check_cond("가격 > MA 200", current_price > last['SMA_200'], f"(${last['SMA_200']:.2f})")
-                
-            if check_goldencross:
-                total_conditions += 1
-                satisfied_count += check_cond("골든크로스 (20>60)", last['SMA_20'] > last['SMA_60'])
-
-            # 1. MA (Downtrend)
-            if check_ma20_down:
-                total_conditions += 1
-                satisfied_count += check_cond("가격 < MA 20", current_price < last['SMA_20'], f"(${last['SMA_20']:.2f})")
-                
-            if check_ma60_down:
-                total_conditions += 1
-                satisfied_count += check_cond("가격 < MA 60", current_price < last['SMA_60'], f"(${last['SMA_60']:.2f})")
-                
-            if check_ma120_down:
-                total_conditions += 1
-                satisfied_count += check_cond("가격 < MA 120", current_price < last['SMA_120'], f"(${last['SMA_120']:.2f})")
-
-            if check_ma200_down:
-                total_conditions += 1
-                satisfied_count += check_cond("가격 < MA 200", current_price < last['SMA_200'], f"(${last['SMA_200']:.2f})")
-                
-            if check_deadcross:
-                total_conditions += 1
-                satisfied_count += check_cond("데드크로스 (20<60)", last['SMA_20'] < last['SMA_60'])
-                
-            if check_reverse_arr:
-                total_conditions += 1
-                is_reverse = (last['SMA_20'] < last['SMA_60']) and (last['SMA_60'] < last['SMA_120']) and (last['SMA_120'] < last['SMA_200'])
-                satisfied_count += check_cond("역배열 (20<60<120<200)", is_reverse)
-            
-            # 2. MACD
-            if check_macd_bull:
-                total_conditions += 1
-                satisfied_count += check_cond("MACD > Signal", last['MACD'] > last['MACD_Signal'])
-            
-            if check_macd_pos:
-                total_conditions += 1
-                satisfied_count += check_cond("MACD > 0", last['MACD'] > 0)
-                
-            # 3. RSI
-            # RSI is special; usually Low is Buy signal, High is Sell signal.
-            # We show both status.
-            st.markdown("---")
-            st.markdown(f"**RSI (14):** {last['RSI']:.2f}")
-            if last['RSI'] <= rsi_buy_thresh:
-                st.success(f"🔵 과매도 구간 (매수 기회?): {rsi_buy_thresh} 이하")
-            elif last['RSI'] >= rsi_sell_thresh:
-                st.warning(f"🔴 과열 구간 (매도 고려?): {rsi_sell_thresh} 이상")
-            else:
-                st.info("⚪ 중립 구간")
-                
-            # 4. Volume
-            if check_vol_spike:
-                total_conditions += 1
-                is_spike = last['Volume'] >= (last['Vol_MA_20'] * vol_mul)
-                satisfied_count += check_cond(f"거래량 폭발 (>{vol_mul}배)", is_spike)
-
-            st.markdown("---")
-            if total_conditions > 0:
-                score = (satisfied_count / total_conditions) * 100
-                st.metric("조건 만족도", f"{score:.0f}%", f"{satisfied_count}/{total_conditions}")
-            else:
-                st.caption("선택된 조건이 없습니다.")
-
-        with c2:
-            render_chart(df, ticker)
+    # Display company header
+    st.markdown(f"## {info.get('longName', ticker)} ({ticker})")
+    col_a, col_b, col_c = st.columns([2, 1, 1])
+    with col_a:
+        st.caption(f"**Sector**: {info.get('sector', 'N/A')} | **Industry**: {info.get('industry', 'N/A')}")
+    with col_b:
+        current_price = info.get('currentPrice') or info.get('regularMarketPrice')
+        if current_price:
+            st.metric("Current Price", f"${current_price:.2f}")
+    with col_c:
+        prev_close = info.get('previousClose')
+        if current_price and prev_close:
+            change_pct = ((current_price - prev_close) / prev_close) * 100
+            st.metric("Change", f"{change_pct:+.2f}%")
+    
+    st.divider()
+    
+    # --- Tabbed Interface ---
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📊 Core Metrics",
+        "📈 Growth Analysis",
+        "💰 Cash Flow",
+        "🏦 Balance Sheet",
+        "📉 Technical"
+    ])
+    
+    with tab1:
+        display_valuation_tab(info, advanced_metrics)
+    
+    with tab2:
+        display_growth_analysis_tab(historical_metrics)
+    
+    with tab3:
+        display_cashflow_tab(historical_metrics, info)
+    
+    with tab4:
+        display_balance_sheet_tab(historical_metrics, info)
+    
+    with tab5:
+        display_technical_analysis_tab(df, ticker)
+    
+    # Company description at bottom
+    with st.expander("📋 Company Description", expanded=False):
+        st.write(info.get('longBusinessSummary', 'No description available'))
 
 if __name__ == "__main__":
     main()

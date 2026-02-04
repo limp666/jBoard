@@ -405,8 +405,10 @@ def get_historical_metrics(financials: Dict[str, pd.DataFrame]) -> Dict[str, pd.
     if not annual_income.empty:
         # Try to get key metrics (yfinance naming can vary)
         try:
-            # Revenue
-            if 'Total Revenue' in annual_income.index:
+            # Revenue - try both naming conventions
+            if 'TotalRevenue' in annual_income.index:
+                metrics['revenue_annual'] = annual_income.loc['TotalRevenue'].sort_index()
+            elif 'Total Revenue' in annual_income.index:
                 metrics['revenue_annual'] = annual_income.loc['Total Revenue'].sort_index()
             
             # EBITDA
@@ -414,11 +416,15 @@ def get_historical_metrics(financials: Dict[str, pd.DataFrame]) -> Dict[str, pd.
                 metrics['ebitda_annual'] = annual_income.loc['EBITDA'].sort_index()
             
             # Operating Income
-            if 'Operating Income' in annual_income.index:
+            if 'OperatingIncome' in annual_income.index:
+                metrics['operating_income_annual'] = annual_income.loc['OperatingIncome'].sort_index()
+            elif 'Operating Income' in annual_income.index:
                 metrics['operating_income_annual'] = annual_income.loc['Operating Income'].sort_index()
                 
             # Net Income
-            if 'Net Income' in annual_income.index:
+            if 'NetIncome' in annual_income.index:
+                metrics['net_income_annual'] = annual_income.loc['NetIncome'].sort_index()
+            elif 'Net Income' in annual_income.index:
                 metrics['net_income_annual'] = annual_income.loc['Net Income'].sort_index()
         except Exception:
             pass
@@ -427,11 +433,21 @@ def get_historical_metrics(financials: Dict[str, pd.DataFrame]) -> Dict[str, pd.
     quarterly_income = financials.get('quarterly_income', pd.DataFrame())
     if not quarterly_income.empty:
         try:
-            if 'Total Revenue' in quarterly_income.index:
+            # Revenue - try both naming conventions
+            if 'TotalRevenue' in quarterly_income.index:
+                metrics['revenue_quarterly'] = quarterly_income.loc['TotalRevenue'].sort_index()
+            elif 'Total Revenue' in quarterly_income.index:
                 metrics['revenue_quarterly'] = quarterly_income.loc['Total Revenue'].sort_index()
                 
+            # EBITDA
             if 'EBITDA' in quarterly_income.index:
                 metrics['ebitda_quarterly'] = quarterly_income.loc['EBITDA'].sort_index()
+            
+            # Net Income - for quarterly charts
+            if 'NetIncome' in quarterly_income.index:
+                metrics['net_income_quarterly'] = quarterly_income.loc['NetIncome'].sort_index()
+            elif 'Net Income' in quarterly_income.index:
+                metrics['net_income_quarterly'] = quarterly_income.loc['Net Income'].sort_index()
         except Exception:
             pass
     

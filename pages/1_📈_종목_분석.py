@@ -9,7 +9,8 @@ from services.yfinance_client import (
     get_stock_financials,
     calculate_advanced_metrics,
     get_historical_metrics,
-    search_symbols
+    search_symbols,
+    calculate_sector_averages  # NEW: Sector comparison
 )
 
 st.set_page_config(page_title="종목 분석", page_icon="📈", layout="wide")
@@ -81,8 +82,14 @@ def create_trend_chart(data: pd.Series, title: str, y_label: str, color: str = "
 # DISPLAY FUNCTIONS FOR TABS
 # ============================================================================
 
-def display_valuation_tab(info: dict, advanced_metrics: dict):
-    """Tab 1: Core valuation metrics"""
+def display_valuation_tab(info: dict, advanced_metrics: dict, sector_avg: dict = None):
+    """Tab 1: Core valuation metrics with sector comparison"""
+    
+    # Sector comparison banner
+    sector = info.get('sector')
+    if sector and sector_avg:
+        st.info(f"📊 Comparing to **{sector}** sector average (median of industry leaders)")
+    
     st.subheader("💰 Valuation Metrics (밸류에이션)")
     
     # Currency handling
@@ -95,8 +102,14 @@ def display_valuation_tab(info: dict, advanced_metrics: dict):
     c1.metric("Market Cap", f"{currency_symbol}{human_format(info.get('marketCap'))}")
     c1.caption(f"Currency: {currency}")
     
-    c2.metric("PER (Trailing)", safe_fmt(info.get('trailingPE')))
-    c2.caption(f"Forward: {safe_fmt(info.get('forwardPE'))}")
+    stock_pe = info.get('trailingPE')
+    c2.metric("PER (Trailing)", safe_fmt(stock_pe))
+    if sector_avg and sector_avg.get('trailing_pe'):
+        sector_pe = sector_avg.get('trailing_pe')
+        diff = ((stock_pe - sector_pe) / sector_pe * 100) if stock_pe and sector_pe else None
+        c2.caption(f"Sector: {safe_fmt(sector_pe)} ({diff:+.1f}% vs sector)" if diff else f"Sector: {safe_fmt(sector_pe)}")
+    else:
+        c2.caption(f"Forward: {safe_fmt(info.get('forwardPE'))}")
     
     peg = advanced_metrics.get('peg_ratio')
     c3.metric("PEG Ratio", safe_fmt(peg), help="PER / Earnings Growth. <1은 저평가")
@@ -104,7 +117,12 @@ def display_valuation_tab(info: dict, advanced_metrics: dict):
     psr = advanced_metrics.get('price_to_sales')
     c4.metric("PSR (Price/Sales)", safe_fmt(psr), help="시총 / 매출")
     
-    c5.metric("PBR (Price/Book)", safe_fmt(info.get('priceToBook')))
+    stock_pbr = info.get('priceToBook')
+    c5.metric("PBR (Price/Book)", safe_fmt(stock_pbr))
+    if sector_avg and sector_avg.get('price_to_book'):
+        sector_pbr = sector_avg.get('price_to_book')
+        diff = ((stock_pbr - sector_pbr) / sector_pbr * 100) if stock_pbr and sector_pbr else None
+        c5.caption(f"Sector: {safe_fmt(sector_pbr)} ({diff:+.1f}%)" if diff else f"Sector: {safe_fmt(sector_pbr)}")
     
     st.divider()
     
@@ -132,6 +150,10 @@ def display_valuation_tab(info: dict, advanced_metrics: dict):
     
     roe = info.get('returnOnEquity')
     p1.metric("ROE", safe_fmt(roe * 100 if roe else None, "{:.2f}", "%"), help="자기자본이익률")
+    if sector_avg and sector_avg.get('return_on_equity'):
+        sector_roe = sector_avg.get('return_on_equity') * 100
+        diff = ((roe * 100 - sector_roe) if roe else None)
+        p1.caption(f"Sector: {sector_roe:.2f}% ({diff:+.1f}pp)" if diff else f"Sector: {sector_roe:.2f}%")
     
     roa = advanced_metrics.get('roa')
     p2.metric("ROA", safe_fmt(roa * 100 if roa else None, "{:.2f}", "%"), help="총자산이익률")
@@ -167,6 +189,9 @@ def display_valuation_tab(info: dict, advanced_metrics: dict):
     
     debt_equity = info.get('debtToEquity')
     f2.metric("Debt / Equity", safe_fmt(debt_equity, "{:.2f}", "%"))
+    if sector_avg and sector_avg.get('debt_to_equity'):
+        sector_de = sector_avg.get('debt_to_equity')
+        f2.caption(f"Sector: {safe_fmt(sector_de, '{:.2f}', '%')}")
     
     current_ratio = info.get('currentRatio')
     f3.metric("Current Ratio", safe_fmt(current_ratio), help="> 1.0 건전")
@@ -657,7 +682,17 @@ def main():
     ])
     
     with tab1:
-        display_valuation_tab(info, advanced_metrics)
+        # Fetch sector averages with caching
+        sector = info.get('sector')
+        sector_avg = {}
+        if sector:
+            with st.spinner(f"Loading {sector} sector benchmarks..."):
+                try:
+                    sector_avg = st.cache_data(ttl=3600)(calculate_sector_averages)(sector)
+                except Exception as e:
+                    st.warning(f"Could not load sector averages: {e}")
+        
+        display_valuation_tab(info, advanced_metrics, sector_avg)
     
     with tab2:
         display_growth_analysis_tab(historical_metrics)

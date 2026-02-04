@@ -515,3 +515,123 @@ def search_symbols(query: str, limit: int = 10) -> List[Dict[str, str]]:
     except Exception as e:
         print(f"Search API Error: {e}")
         return []
+
+
+# ============================================================================
+# SECTOR COMPARISON FUNCTIONS
+# ============================================================================
+
+# Curated list of top companies by market cap in each sector
+# Using 5-10 representative stocks per sector for fast, meaningful comparison
+SECTOR_PEERS = {
+    "Technology": ["AAPL", "MSFT", "GOOGL", "META", "NVDA", "ORCL", "CSCO", "ADBE"],
+    "Healthcare": ["JNJ", "UNH", "PFE", "ABBV", "TMO", "MRK", "LLY"],
+    "Financials": ["JPM", "BAC", "WFC", "GS", "MS", "C", "BLK"],
+    "Consumer Cyclical": ["AMZN", "TSLA", "HD", "NKE", "MCD", "SBUX", "TGT"],
+    "Communication Services": ["GOOGL", "META", "DIS", "NFLX", "CMCSA", "T", "VZ"],
+    "Industrials": ["HON", "UNP", "CAT", "BA", "RTX", "LMT", "UPS"],
+    "Consumer Defensive": ["PG", "KO", "PEP", "WMT", "COST", "MO", "CL"],
+    "Energy": ["XOM", "CVX", "COP", "SLB", "EOG", "MPC"],
+    "Real Estate": ["PLD", "AMT", "EQIX", "PSA", "SPG", "O"],
+    "Utilities": ["NEE", "DUK", "SO", "D", "AEP", "EXC"],
+    "Basic Materials": ["LIN", "APD", "SHW", "ECL", "NEM", "FCX"],
+}
+
+
+def get_sector_peers(sector: str) -> List[str]:
+    """
+    Get list of peer company tickers for a given sector.
+    
+    Args:
+        sector: Sector name (e.g., "Technology", "Healthcare")
+        
+    Returns:
+        List of ticker symbols representing sector peers
+    """
+    # Try exact match first
+    if sector in SECTOR_PEERS:
+        return SECTOR_PEERS[sector]
+    
+    # Try case-insensitive match
+    for key in SECTOR_PEERS:
+        if key.lower() == sector.lower():
+            return SECTOR_PEERS[key]
+    
+    # No match found
+    return []
+
+
+def calculate_sector_averages(sector: str) -> Dict[str, Any]:
+    """
+    Calculate sector median metrics from peer companies.
+    
+    Args:
+        sector: Sector name (e.g., "Technology", "Healthcare")
+        
+    Returns:
+        Dictionary with median values for key metrics:
+        - trailing_pe: Price to Earnings (Trailing)
+        - price_to_book: Price to Book Ratio
+        - return_on_equity: Return on Equity (%)
+        - return_on_assets: Return on Assets (%)
+        - gross_margins: Gross Margin (%)
+        - profit_margins: Net Profit Margin (%)
+        - debt_to_equity: Debt to Equity Ratio
+        - revenue_growth: Revenue Growth YoY (%)
+        - earnings_growth: Earnings Growth YoY (%)
+    """
+    peers = get_sector_peers(sector)
+    if not peers:
+        print(f"[calculate_sector_averages] No peers found for sector: {sector}")
+        return {}
+    
+    print(f"[calculate_sector_averages] Fetching data for {len(peers)} peers in {sector} sector...")
+    
+    # Fetch data for all peers
+    metrics_list = []
+    for ticker in peers:
+        try:
+            # Use yfinance directly for more reliability
+            stock = yf.Ticker(ticker)
+            info = stock.info
+            
+            if not info or len(info) < 10:  # Basic sanity check
+                print(f"  [WARN] Insufficient data for {ticker}")
+                continue
+                
+            metrics_list.append({
+                'trailing_pe': info.get('trailingPE'),
+                'forward_pe': info.get('forwardPE'),
+                'price_to_book': info.get('priceToBook'),
+                'price_to_sales': info.get('priceToSalesTrailing12Months'),
+                'return_on_equity': info.get('returnOnEquity'),
+                'return_on_assets': info.get('returnOnAssets'),
+                'gross_margins': info.get('grossMargins'),
+                'operating_margins': info.get('operatingMargins'),
+                'profit_margins': info.get('profitMargins'),
+                'debt_to_equity': info.get('debtToEquity'),
+                'current_ratio': info.get('currentRatio'),
+                'revenue_growth': info.get('revenueGrowth'),
+                'earnings_growth': info.get('earningsGrowth'),
+            })
+            print(f"  [OK] {ticker} data fetched")
+        except Exception as e:
+            print(f"  [ERROR] Failed to fetch {ticker}: {e}")
+            continue
+    
+    if not metrics_list:
+        print(f"[calculate_sector_averages] No valid data collected for {sector}")
+        return {}
+    
+    print(f"[calculate_sector_averages] Successfully collected data from {len(metrics_list)}/{len(peers)} peers")
+    
+    # Calculate median (more robust than mean for outliers)
+    df = pd.DataFrame(metrics_list)
+    medians = df.median()
+    
+    # Convert to regular dict with None for NaN values
+    result = {}
+    for key, value in medians.items():
+        result[key] = None if pd.isna(value) else float(value)
+    
+    return result

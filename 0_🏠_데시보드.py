@@ -27,21 +27,18 @@ st.set_page_config(
 
 MARKET_SYMBOLS = {"SPY", "QQQ", "DIA", "IWM", "^GSPC", "^DJI", "^IXIC", "MARKET"}
 SECTOR_ETF_SYMBOLS = set(yfinance_client.SECTOR_ETF_MAP.values())
+BTC_SYMBOLS = {"BTC-USD", "IBIT", "FBTC", "BITB", "ARKB", "MSTR", "COIN", "MARA", "RIOT"}
 
-CATEGORY_ORDER = [
-    "시장/거시",
-    "섹터 ETF",
-    "개별 종목",
-    "기업/산업",
-    "기타",
+NEWS_GROUP_ORDER = [
+    "거시",
+    "미국 주식/섹터",
+    "비트코인",
 ]
 
-CATEGORY_ICON = {
-    "시장/거시": "🌎",
-    "섹터 ETF": "📊",
-    "개별 종목": "🏢",
-    "기업/산업": "🏭",
-    "기타": "📰",
+GROUP_ICON = {
+    "거시": "🌎",
+    "미국 주식/섹터": "📊",
+    "비트코인": "₿",
 }
 
 MACRO_KEYWORDS = [
@@ -92,8 +89,13 @@ def _fetch_market_indices(symbols: Iterable[str]):
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def _fetch_news(tickers: Iterable[str], limit: int, include_general: bool):
-    return yfinance_client.get_news(tickers, limit=limit, include_general=include_general)
+def _fetch_news(tickers: Iterable[str], limit: int, include_general: bool, include_bitcoin: bool):
+    return yfinance_client.get_news(
+        tickers,
+        limit=limit,
+        include_general=include_general,
+        include_bitcoin=include_bitcoin,
+    )
 
 
 def _load_sector_performance() -> Tuple[pd.DataFrame, str]:
@@ -167,9 +169,14 @@ def _load_market_overview() -> Tuple[pd.DataFrame, str]:
     return df, source
 
 
-def _load_news(tickers: List[str], limit: int, include_general: bool) -> Tuple[pd.DataFrame, str]:
+def _load_news(
+    tickers: List[str],
+    limit: int,
+    include_general: bool,
+    include_bitcoin: bool,
+) -> Tuple[pd.DataFrame, str]:
     try:
-        data = _fetch_news(tickers, limit, include_general)
+        data = _fetch_news(tickers, limit, include_general, include_bitcoin)
         source = "live"
     except Exception as exc:  # noqa: BLE001
         st.warning(
@@ -196,23 +203,28 @@ def _truncate_text(text: str, max_len: int = 260) -> str:
     return f"{text[:max_len].rstrip()}..."
 
 
+def _detect_sector_label(symbol: str) -> str:
+    reverse_map = {v: k for k, v in yfinance_client.SECTOR_ETF_MAP.items()}
+    if symbol in reverse_map:
+        return reverse_map[symbol]
+    if symbol in {"SPY", "QQQ", "DIA", "IWM", "^GSPC", "^DJI", "^IXIC"}:
+        return "지수/ETF"
+    if symbol in BTC_SYMBOLS:
+        return "Bitcoin"
+    return "개별 종목"
+
+
 def _categorize_news_item(row: pd.Series) -> str:
     symbol = str(row.get("symbol", "") or "").upper()
     title = str(row.get("title", "") or "").lower()
     summary = str(row.get("summary", "") or row.get("text", "") or "").lower()
     content = f"{title} {summary}"
 
-    if symbol in MARKET_SYMBOLS:
-        return "시장/거시"
-    if symbol in SECTOR_ETF_SYMBOLS:
-        return "섹터 ETF"
-    if any(keyword in content for keyword in MACRO_KEYWORDS):
-        return "시장/거시"
-    if symbol and symbol.isalpha() and 1 <= len(symbol) <= 5:
-        return "개별 종목"
-    if any(word in content for word in ["earnings", "guidance", "acquisition", "merger", "downgrade", "upgrade"]):
-        return "기업/산업"
-    return "기타"
+    if symbol in BTC_SYMBOLS or any(k in content for k in ["bitcoin", "btc", "crypto", "blockchain"]):
+        return "비트코인"
+    if symbol in MARKET_SYMBOLS or any(keyword in content for keyword in MACRO_KEYWORDS):
+        return "거시"
+    return "미국 주식/섹터"
 
 
 def _prepare_news_dataframe(news_df: pd.DataFrame) -> pd.DataFrame:
@@ -220,7 +232,9 @@ def _prepare_news_dataframe(news_df: pd.DataFrame) -> pd.DataFrame:
         return news_df
 
     df = news_df.copy()
-    df["category"] = df.apply(_categorize_news_item, axis=1)
+    df["group"] = df.apply(_categorize_news_item, axis=1)
+    df["symbol"] = df.get("symbol", "").fillna("").astype(str).str.upper()
+    df["sector_label"] = df["symbol"].apply(_detect_sector_label)
     if "publishedDate" in df.columns:
         df["publishedDate"] = pd.to_datetime(df["publishedDate"], errors="coerce")
     return df.sort_values("publishedDate", ascending=False)
@@ -318,9 +332,14 @@ def render_sector_etfs():
         st.caption("샘플 데이터가 사용되었습니다.")
 
 
-def render_news_section(selected_tickers: List[str], limit: int, include_general: bool):
+def render_news_section(
+    selected_tickers: List[str],
+    limit: int,
+    include_general: bool,
+    include_bitcoin: bool,
+):
     st.subheader("📰 당일 주요 뉴스")
-    news_df, source = _load_news(selected_tickers, limit, include_general)
+    news_df, source = _load_news(selected_tickers, limit, include_general, include_bitcoin)
 
     if news_df.empty:
         st.info("표시할 뉴스가 없습니다.")
@@ -338,31 +357,33 @@ def render_news_section(selected_tickers: List[str], limit: int, include_general
     for _, row in news_df.head(12).iterrows():
         published = row.get("publishedDate")
         ts = published.strftime("%m-%d %H:%M") if isinstance(published, pd.Timestamp) else ""
-        category = row.get("category", "기타")
-        icon = CATEGORY_ICON.get(category, "📰")
+        group = row.get("group", "미국 주식/섹터")
+        icon = GROUP_ICON.get(group, "📰")
+        sector_label = row.get("sector_label", "개별 종목")
         st.markdown(
             f"- {icon} [{row.get('title', '제목 없음')}]({row.get('url', '#')}) "
-            f"`{category}` ({row.get('site', '출처 미상')} · {ts})"
+            f"`{group}` · `{sector_label}` ({row.get('site', '출처 미상')} · {ts})"
         )
 
     st.markdown("---")
 
-    available_categories = [c for c in CATEGORY_ORDER if (news_df["category"] == c).any()]
-    tab_labels = [f"{CATEGORY_ICON.get(c, '📰')} {c} ({(news_df['category'] == c).sum()})" for c in available_categories]
+    available_groups = [g for g in NEWS_GROUP_ORDER if (news_df["group"] == g).any()]
+    tab_labels = [f"{GROUP_ICON.get(g, '📰')} {g} ({(news_df['group'] == g).sum()})" for g in available_groups]
     tabs = st.tabs(tab_labels)
 
-    for tab, category in zip(tabs, available_categories):
+    for tab, group in zip(tabs, available_groups):
         with tab:
-            category_df = news_df[news_df["category"] == category]
-            for _, row in category_df.iterrows():
+            group_df = news_df[news_df["group"] == group]
+            for _, row in group_df.iterrows():
                 published = row.get("publishedDate")
                 timestamp = published.strftime("%Y-%m-%d %H:%M") if isinstance(published, pd.Timestamp) else ""
                 summary = _truncate_text(row.get("summary") or row.get("text", ""), 280)
                 symbol = row.get("symbol", "")
+                sector_label = row.get("sector_label", "개별 종목")
 
                 with st.container(border=True):
                     st.markdown(f"#### [{row.get('title', '제목 없음')}]({row.get('url', '#')})")
-                    st.caption(f"{row.get('site', '출처 미상')} · {timestamp} · {symbol}")
+                    st.caption(f"{row.get('site', '출처 미상')} · {timestamp} · {symbol} · {sector_label}")
                     if summary:
                         st.write(summary)
 
@@ -386,6 +407,7 @@ def main():
         options=["혼합(추천)", "선택 섹터 중심", "시장 전체"],
         index=0,
     )
+    include_bitcoin = st.sidebar.checkbox("비트코인 뉴스 포함", value=True)
     st.sidebar.markdown("---")
 
     render_market_overview()
@@ -418,7 +440,7 @@ def main():
         news_tickers = list(dict.fromkeys(sector_tickers + market_tickers))
         include_general = True
 
-    render_news_section(news_tickers, news_limit, include_general)
+    render_news_section(news_tickers, news_limit, include_general, include_bitcoin)
 
     st.caption(
         "데이터 출처: Yahoo Finance (무료, 15분 지연 시세). "

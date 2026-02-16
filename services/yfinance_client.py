@@ -37,12 +37,24 @@ GENERAL_MARKET_TICKERS = [
     "XLV",
 ]
 
+BITCOIN_RELATED_TICKERS = [
+    "BTC-USD",
+    "IBIT",
+    "FBTC",
+    "BITB",
+    "ARKB",
+    "MSTR",
+    "COIN",
+]
+
 DEFAULT_NEWS_KEYWORDS = [
     "stock market",
     "Federal Reserve",
     "US inflation",
     "earnings",
     "AI stocks",
+    "bitcoin",
+    "crypto market",
 ]
 
 def get_sector_performance() -> List[Dict[str, Any]]:
@@ -255,6 +267,7 @@ def get_news(
     tickers: Iterable[str],
     limit: int = 10,
     include_general: bool = True,
+    include_bitcoin: bool = True,
 ) -> List[Dict[str, Any]]:
     """
     Fetch recent news for the given tickers.
@@ -270,6 +283,10 @@ def get_news(
         combined = target_tickers + GENERAL_MARKET_TICKERS
         # Preserve order while de-duplicating
         target_tickers = list(dict.fromkeys(combined))
+
+    # Optionally include Bitcoin and BTC proxy assets for dedicated crypto coverage.
+    if include_bitcoin:
+        target_tickers = list(dict.fromkeys(target_tickers + BITCOIN_RELATED_TICKERS))
 
     # Cap ticker requests for speed/stability in Streamlit environments.
     search_tickers = target_tickers[:8]
@@ -303,6 +320,22 @@ def get_news(
     if include_general:
         for keyword in DEFAULT_NEWS_KEYWORDS:
             for item in _search_news_by_keyword(keyword, news_count=6):
+                title = item.get("title")
+                url = item.get("url")
+                if url and url in seen_urls:
+                    continue
+                if title and title in seen_titles:
+                    continue
+                if url:
+                    seen_urls.add(url)
+                if title:
+                    seen_titles.add(title)
+                all_news.append(item)
+
+    # Extra crypto keyword fallback for BTC coverage
+    if include_bitcoin:
+        for keyword in ["bitcoin", "btc", "crypto"]:
+            for item in _search_news_by_keyword(keyword, news_count=4):
                 title = item.get("title")
                 url = item.get("url")
                 if url and url in seen_urls:

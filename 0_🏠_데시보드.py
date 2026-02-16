@@ -136,7 +136,7 @@ def _load_news(tickers: List[str], limit: int, include_general: bool) -> Tuple[p
         source = "sample"
     df = pd.DataFrame(data)
     if "publishedDate" in df.columns:
-        df["publishedDate"] = pd.to_datetime(df["publishedDate"], errors="coerce")
+        df["publishedDate"] = pd.to_datetime(df["publishedDate"], errors="coerce", utc=True).dt.tz_convert(None)
     return df, source
 
 

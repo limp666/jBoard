@@ -158,11 +158,12 @@ def _to_timestamp(value: Any) -> pd.Timestamp:
             return pd.Timestamp.now()
         if isinstance(value, (int, float)):
             # Yahoo often returns UNIX epoch seconds
-            return pd.to_datetime(value, unit="s", errors="coerce")
-        ts = pd.to_datetime(value, errors="coerce")
+            ts = pd.to_datetime(value, unit="s", errors="coerce", utc=True)
+            return ts.tz_convert(None) if not pd.isna(ts) else pd.Timestamp.now()
+        ts = pd.to_datetime(value, errors="coerce", utc=True)
         if pd.isna(ts):
             return pd.Timestamp.now()
-        return ts
+        return ts.tz_convert(None)
     except Exception:
         return pd.Timestamp.now()
 

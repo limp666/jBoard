@@ -15,6 +15,40 @@ st.set_page_config(
     layout="wide",
 )
 
+MARKET_SYMBOLS = {"SPY", "QQQ", "DIA", "IWM", "^GSPC", "^DJI", "^IXIC", "MARKET"}
+SECTOR_ETF_SYMBOLS = set(yfinance_client.SECTOR_ETF_MAP.values())
+
+CATEGORY_ORDER = [
+    "시장/거시",
+    "섹터 ETF",
+    "개별 종목",
+    "기업/산업",
+    "기타",
+]
+
+CATEGORY_ICON = {
+    "시장/거시": "🌎",
+    "섹터 ETF": "📊",
+    "개별 종목": "🏢",
+    "기업/산업": "🏭",
+    "기타": "📰",
+}
+
+MACRO_KEYWORDS = [
+    "federal reserve",
+    "inflation",
+    "interest rate",
+    "treasury",
+    "cpi",
+    "pce",
+    "jobs report",
+    "recession",
+    "nasdaq",
+    "s&p 500",
+    "dow",
+    "market",
+]
+
 
 def _normalize_change(value) -> float:
     """Convert percentage values that may be strings into floats."""
@@ -144,6 +178,44 @@ def _sector_to_ticker(sector_name: str) -> str:
     return yfinance_client.SECTOR_ETF_MAP.get(sector_name, "").upper()
 
 
+def _truncate_text(text: str, max_len: int = 260) -> str:
+    if not text:
+        return ""
+    if len(text) <= max_len:
+        return text
+    return f"{text[:max_len].rstrip()}..."
+
+
+def _categorize_news_item(row: pd.Series) -> str:
+    symbol = str(row.get("symbol", "") or "").upper()
+    title = str(row.get("title", "") or "").lower()
+    summary = str(row.get("summary", "") or row.get("text", "") or "").lower()
+    content = f"{title} {summary}"
+
+    if symbol in MARKET_SYMBOLS:
+        return "시장/거시"
+    if symbol in SECTOR_ETF_SYMBOLS:
+        return "섹터 ETF"
+    if any(keyword in content for keyword in MACRO_KEYWORDS):
+        return "시장/거시"
+    if symbol and symbol.isalpha() and 1 <= len(symbol) <= 5:
+        return "개별 종목"
+    if any(word in content for word in ["earnings", "guidance", "acquisition", "merger", "downgrade", "upgrade"]):
+        return "기업/산업"
+    return "기타"
+
+
+def _prepare_news_dataframe(news_df: pd.DataFrame) -> pd.DataFrame:
+    if news_df.empty:
+        return news_df
+
+    df = news_df.copy()
+    df["category"] = df.apply(_categorize_news_item, axis=1)
+    if "publishedDate" in df.columns:
+        df["publishedDate"] = pd.to_datetime(df["publishedDate"], errors="coerce")
+    return df.sort_values("publishedDate", ascending=False)
+
+
 def render_market_overview():
     st.subheader("📊 지수 및 섹터 현황")
     market_df, _ = _load_market_overview()
@@ -244,46 +316,45 @@ def render_news_section(selected_tickers: List[str], limit: int, include_general
         st.info("표시할 뉴스가 없습니다.")
         return
 
-    st.markdown("**헤드라인 바로가기**")
-    for _, row in news_df.sort_values("publishedDate", ascending=False).head(10).iterrows():
+    news_df = _prepare_news_dataframe(news_df)
+
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        st.markdown("**헤드라인 바로가기**")
+    with col2:
+        unique_sources = news_df["site"].dropna().nunique() if "site" in news_df.columns else 0
+        st.caption(f"기사 {len(news_df)}건 · 출처 {unique_sources}개")
+
+    for _, row in news_df.head(12).iterrows():
         published = row.get("publishedDate")
-        if isinstance(published, pd.Timestamp):
-            ts = published.strftime("%m-%d %H:%M")
-        else:
-            ts = str(published) if published else ""
+        ts = published.strftime("%m-%d %H:%M") if isinstance(published, pd.Timestamp) else ""
+        category = row.get("category", "기타")
+        icon = CATEGORY_ICON.get(category, "📰")
         st.markdown(
-            f"- [{row.get('title', '제목 없음')}]({row.get('url', '#')}) "
-            f"({row.get('site', '출처 미상')} · {ts})"
+            f"- {icon} [{row.get('title', '제목 없음')}]({row.get('url', '#')}) "
+            f"`{category}` ({row.get('site', '출처 미상')} · {ts})"
         )
 
     st.markdown("---")
 
-    for _, row in news_df.sort_values("publishedDate", ascending=False).iterrows():
-        published = row.get("publishedDate")
-        timestamp = ""
-        if isinstance(published, pd.Timestamp):
-            timestamp = published.strftime("%Y-%m-%d %H:%M")
-        elif isinstance(published, str):
-            timestamp = published
+    available_categories = [c for c in CATEGORY_ORDER if (news_df["category"] == c).any()]
+    tab_labels = [f"{CATEGORY_ICON.get(c, '📰')} {c} ({(news_df['category'] == c).sum()})" for c in available_categories]
+    tabs = st.tabs(tab_labels)
 
-        with st.container(border=True):
-            col1, col2 = st.columns([1, 3])
-            
-            thumbnail = row.get("thumbnail")
-            with col1:
-                if thumbnail:
-                    st.image(thumbnail, width='stretch')
-                else:
-                    # Placeholder or empty
-                    st.write("🖼️")
-            
-            with col2:
-                st.markdown(
-                    f"### [{row.get('title', '제목 없음')}]({row.get('url', '#')})\n"
-                    f"**{row.get('site', '출처 미상')}** • {timestamp} • {row.get('symbol', '')}\n\n"
-                    f"{row.get('summary') or row.get('text', '')}",
-                    unsafe_allow_html=False,
-                )
+    for tab, category in zip(tabs, available_categories):
+        with tab:
+            category_df = news_df[news_df["category"] == category]
+            for _, row in category_df.iterrows():
+                published = row.get("publishedDate")
+                timestamp = published.strftime("%Y-%m-%d %H:%M") if isinstance(published, pd.Timestamp) else ""
+                summary = _truncate_text(row.get("summary") or row.get("text", ""), 280)
+                symbol = row.get("symbol", "")
+
+                with st.container(border=True):
+                    st.markdown(f"#### [{row.get('title', '제목 없음')}]({row.get('url', '#')})")
+                    st.caption(f"{row.get('site', '출처 미상')} · {timestamp} · {symbol}")
+                    if summary:
+                        st.write(summary)
 
     if source == "sample":
         st.caption("샘플 뉴스가 사용되었습니다.")

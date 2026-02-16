@@ -48,8 +48,8 @@ def _fetch_market_indices(symbols: Iterable[str]):
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def _fetch_news(tickers: Iterable[str], limit: int):
-    return yfinance_client.get_news(tickers, limit=limit)
+def _fetch_news(tickers: Iterable[str], limit: int, include_general: bool):
+    return yfinance_client.get_news(tickers, limit=limit, include_general=include_general)
 
 
 def _load_sector_performance() -> Tuple[pd.DataFrame, str]:
@@ -123,9 +123,9 @@ def _load_market_overview() -> Tuple[pd.DataFrame, str]:
     return df, source
 
 
-def _load_news(tickers: List[str], limit: int) -> Tuple[pd.DataFrame, str]:
+def _load_news(tickers: List[str], limit: int, include_general: bool) -> Tuple[pd.DataFrame, str]:
     try:
-        data = _fetch_news(tickers, limit)
+        data = _fetch_news(tickers, limit, include_general)
         source = "live"
     except Exception as exc:  # noqa: BLE001
         st.warning(
@@ -236,13 +236,27 @@ def render_sector_etfs():
         st.caption("샘플 데이터가 사용되었습니다.")
 
 
-def render_news_section(selected_tickers: List[str], limit: int):
+def render_news_section(selected_tickers: List[str], limit: int, include_general: bool):
     st.subheader("📰 당일 주요 뉴스")
-    news_df, source = _load_news(selected_tickers, limit)
+    news_df, source = _load_news(selected_tickers, limit, include_general)
 
     if news_df.empty:
         st.info("표시할 뉴스가 없습니다.")
         return
+
+    st.markdown("**헤드라인 바로가기**")
+    for _, row in news_df.sort_values("publishedDate", ascending=False).head(10).iterrows():
+        published = row.get("publishedDate")
+        if isinstance(published, pd.Timestamp):
+            ts = published.strftime("%m-%d %H:%M")
+        else:
+            ts = str(published) if published else ""
+        st.markdown(
+            f"- [{row.get('title', '제목 없음')}]({row.get('url', '#')}) "
+            f"({row.get('site', '출처 미상')} · {ts})"
+        )
+
+    st.markdown("---")
 
     for _, row in news_df.sort_values("publishedDate", ascending=False).iterrows():
         published = row.get("publishedDate")
@@ -286,6 +300,11 @@ def main():
     # FMP API Key input removed as we use yfinance (free)
     
     news_limit = st.sidebar.slider("뉴스 기사 수", min_value=5, max_value=50, value=15, step=5)
+    news_mode = st.sidebar.radio(
+        "뉴스 범위",
+        options=["혼합(추천)", "선택 섹터 중심", "시장 전체"],
+        index=0,
+    )
     st.sidebar.markdown("---")
 
     render_market_overview()
@@ -304,12 +323,21 @@ def main():
 
     render_sector_etfs()
 
-    tickers = [_sector_to_ticker(sector) for sector in selected_sectors]
-    tickers = [ticker for ticker in tickers if ticker]
-    if not tickers:
-        tickers = ["SPY", "QQQ"]
+    sector_tickers = [_sector_to_ticker(sector) for sector in selected_sectors]
+    sector_tickers = [ticker for ticker in sector_tickers if ticker]
+    market_tickers = ["SPY", "QQQ", "DIA", "IWM", "XLK", "XLF", "XLE", "XLV"]
 
-    render_news_section(tickers, news_limit)
+    if news_mode == "선택 섹터 중심":
+        news_tickers = sector_tickers or ["SPY", "QQQ"]
+        include_general = False
+    elif news_mode == "시장 전체":
+        news_tickers = market_tickers
+        include_general = True
+    else:  # 혼합(추천)
+        news_tickers = list(dict.fromkeys(sector_tickers + market_tickers))
+        include_general = True
+
+    render_news_section(news_tickers, news_limit, include_general)
 
     st.caption(
         "데이터 출처: Yahoo Finance (무료, 15분 지연 시세). "

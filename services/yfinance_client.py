@@ -6,6 +6,7 @@ Replaces the FMP client to provide free, reliable market data.
 import pandas as pd
 import yfinance as yf
 from typing import List, Dict, Any, Iterable
+import requests
 
 # Sector ETF Map (Same as before, but we use these tickers to get data)
 SECTOR_ETF_MAP = {
@@ -24,6 +25,25 @@ SECTOR_ETF_MAP = {
 
 # Reverse map for looking up sector name by ticker
 TICKER_TO_SECTOR = {v: k for k, v in SECTOR_ETF_MAP.items()}
+
+GENERAL_MARKET_TICKERS = [
+    "SPY",
+    "QQQ",
+    "DIA",
+    "IWM",
+    "XLK",
+    "XLF",
+    "XLE",
+    "XLV",
+]
+
+DEFAULT_NEWS_KEYWORDS = [
+    "stock market",
+    "Federal Reserve",
+    "US inflation",
+    "earnings",
+    "AI stocks",
+]
 
 def get_sector_performance() -> List[Dict[str, Any]]:
     """
@@ -131,107 +151,174 @@ def get_market_indices(symbols: Iterable[str]) -> List[Dict[str, Any]]:
             
     return result
 
-def get_news(tickers: Iterable[str], limit: int = 10) -> List[Dict[str, Any]]:
+def _to_timestamp(value: Any) -> pd.Timestamp:
+    """Convert various date formats into pandas Timestamp."""
+    try:
+        if value is None:
+            return pd.Timestamp.now()
+        if isinstance(value, (int, float)):
+            # Yahoo often returns UNIX epoch seconds
+            return pd.to_datetime(value, unit="s", errors="coerce")
+        ts = pd.to_datetime(value, errors="coerce")
+        if pd.isna(ts):
+            return pd.Timestamp.now()
+        return ts
+    except Exception:
+        return pd.Timestamp.now()
+
+
+def _extract_news_from_yfinance_item(item: Dict[str, Any], symbol: str) -> Dict[str, Any]:
+    """Normalize yfinance news item format."""
+    data = item.get("content", item)
+    title = data.get("title")
+    if not title:
+        return {}
+
+    url = data.get("link")
+    if not url and "clickThroughUrl" in data:
+        url = data["clickThroughUrl"].get("url")
+    if not url and "canonicalUrl" in data:
+        url = data["canonicalUrl"].get("url")
+
+    site = data.get("publisher")
+    if not site and "provider" in data:
+        site = data["provider"].get("displayName")
+
+    pub_date = data.get("providerPublishTime") or data.get("pubDate")
+
+    summary = data.get("summary") or data.get("description") or ""
+
+    thumbnail_url = None
+    if "thumbnail" in data and isinstance(data["thumbnail"], dict):
+        thumbs = data["thumbnail"].get("resolutions")
+        if thumbs and isinstance(thumbs, list) and len(thumbs) > 0:
+            thumbnail_url = thumbs[-1].get("url")
+        elif "originalUrl" in data["thumbnail"]:
+            thumbnail_url = data["thumbnail"]["originalUrl"]
+
+    return {
+        "symbol": symbol,
+        "title": title,
+        "url": url,
+        "site": site or "Yahoo Finance",
+        "publishedDate": _to_timestamp(pub_date),
+        "summary": summary,
+        "thumbnail": thumbnail_url,
+    }
+
+
+def _search_news_by_keyword(keyword: str, news_count: int = 6) -> List[Dict[str, Any]]:
+    """Fetch Yahoo news headlines by keyword for broader market coverage."""
+    url = "https://query1.finance.yahoo.com/v1/finance/search"
+    params = {
+        "q": keyword,
+        "quotesCount": 0,
+        "newsCount": news_count,
+    }
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
+    }
+
+    try:
+        resp = requests.get(url, params=params, headers=headers, timeout=5)
+        resp.raise_for_status()
+        payload = resp.json()
+    except Exception:
+        return []
+
+    items = []
+    for news in payload.get("news", []):
+        title = news.get("title")
+        if not title:
+            continue
+
+        items.append(
+            {
+                "symbol": "MARKET",
+                "title": title,
+                "url": news.get("link"),
+                "site": news.get("publisher", "Yahoo Finance"),
+                "publishedDate": _to_timestamp(news.get("providerPublishTime")),
+                "summary": news.get("summary", ""),
+                "thumbnail": None,
+            }
+        )
+    return items
+
+
+def get_news(
+    tickers: Iterable[str],
+    limit: int = 10,
+    include_general: bool = True,
+) -> List[Dict[str, Any]]:
     """
     Fetch recent news for the given tickers.
     """
-    # yfinance news is per ticker. We can fetch for one or aggregate.
-    # If tickers list is provided, we fetch news for the first few or all and merge.
-    
     all_news = []
-    seen_links = set()
-    
-    # If no tickers, default to SPY/QQQ for general market news
-    target_tickers = list(tickers) if tickers else ["SPY", "QQQ"]
-    
-    # Limit to first 5 tickers to balance speed and variety
-    # If we have very few results, we might want to try more, but start with 5.
-    search_tickers = target_tickers[:5]
-    
+    seen_urls = set()
+    seen_titles = set()
+
+    target_tickers = list(tickers) if tickers else []
+
+    # In mixed/general mode, expand to market-wide representative tickers.
+    if include_general:
+        combined = target_tickers + GENERAL_MARKET_TICKERS
+        # Preserve order while de-duplicating
+        target_tickers = list(dict.fromkeys(combined))
+
+    # Cap ticker requests for speed/stability in Streamlit environments.
+    search_tickers = target_tickers[:8]
+
     for ticker in search_tickers:
         try:
             yf_ticker = yf.Ticker(ticker)
             news_items = yf_ticker.news
-            
             for item in news_items:
-                # Handle nested 'content' structure
-                data = item.get("content", item)
-                
-                title = data.get("title")
-                if not title:
+                normalized = _extract_news_from_yfinance_item(item, ticker)
+                if not normalized:
                     continue
-                    
-                # Deduplication by title
-                if title in seen_links:
-                    continue
-                seen_links.add(title)
-                
-                # URL extraction
-                url = data.get("link")
-                if not url and "clickThroughUrl" in data:
-                    url = data["clickThroughUrl"].get("url")
-                if not url and "canonicalUrl" in data:
-                    url = data["canonicalUrl"].get("url")
-                    
-                # Site/Publisher
-                site = data.get("publisher")
-                if not site and "provider" in data:
-                    site = data["provider"].get("displayName")
-                    
-                # Date
-                pub_date = data.get("providerPublishTime")
-                if not pub_date and "pubDate" in data:
-                    pub_date = data["pubDate"]
-                
-                # Summary
-                summary = data.get("summary") or data.get("description")
-                
-                # Thumbnail
-                thumbnail_url = None
-                if "thumbnail" in data:
-                    thumbs = data["thumbnail"].get("resolutions")
-                    if thumbs and isinstance(thumbs, list) and len(thumbs) > 0:
-                        thumbnail_url = thumbs[-1].get("url")
-                    elif "originalUrl" in data["thumbnail"]:
-                        thumbnail_url = data["thumbnail"]["originalUrl"]
 
-                all_news.append({
-                    "symbol": ticker,
-                    "title": title,
-                    "url": url,
-                    "site": site or "Yahoo Finance",
-                    "publishedDate": pd.to_datetime(pub_date) if pub_date else pd.Timestamp.now(),
-                    "summary": summary or "",
-                    "thumbnail": thumbnail_url
-                })
+                title = normalized.get("title")
+                url = normalized.get("url")
+                if url and url in seen_urls:
+                    continue
+                if title and title in seen_titles:
+                    continue
+
+                if url:
+                    seen_urls.add(url)
+                if title:
+                    seen_titles.add(title)
+
+                all_news.append(normalized)
         except Exception:
             continue
-            
-    # Fallback: If no news found, try Market Indices
-    if not all_news:
-        try:
-            for idx in ["^GSPC", "^IXIC"]:
-                idx_ticker = yf.Ticker(idx)
-                for item in idx_ticker.news:
-                    data = item.get("content", item)
-                    title = data.get("title")
-                    if title and title not in seen_links:
-                        seen_links.add(title)
-                        # ... (Simplified extraction for fallback)
-                        all_news.append({
-                            "symbol": idx,
-                            "title": title,
-                            "url": data.get("link"),
-                            "site": "Market News",
-                            "publishedDate": pd.Timestamp.now(), # Approximate
-                            "summary": data.get("summary", ""),
-                            "thumbnail": None
-                        })
-        except Exception:
-            pass
 
-    # Sort by date desc
-    all_news.sort(key=lambda x: x["publishedDate"], reverse=True)
+    # Keyword news broadens coverage to macro/headline items.
+    if include_general:
+        for keyword in DEFAULT_NEWS_KEYWORDS:
+            for item in _search_news_by_keyword(keyword, news_count=6):
+                title = item.get("title")
+                url = item.get("url")
+                if url and url in seen_urls:
+                    continue
+                if title and title in seen_titles:
+                    continue
+                if url:
+                    seen_urls.add(url)
+                if title:
+                    seen_titles.add(title)
+                all_news.append(item)
+
+    # Final fallback if still empty
+    if not all_news:
+        all_news = _search_news_by_keyword("stock market", news_count=max(limit, 10))
+
+    all_news.sort(key=lambda x: _to_timestamp(x.get("publishedDate")), reverse=True)
     return all_news[:limit]
 
 

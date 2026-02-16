@@ -1,13 +1,26 @@
 import os
 # Force Deploy Update: Fixed KeyError issue
+import importlib.util
+from pathlib import Path
 from typing import Iterable, List, Tuple
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from data import sample_data
 from services import yfinance_client
+
+try:
+    from data import sample_data
+except Exception:
+    # Streamlit Cloud occasionally fails package import resolution for `data`.
+    # Load sample_data directly from file as a resilient fallback.
+    _sample_path = Path(__file__).parent / "data" / "sample_data.py"
+    _spec = importlib.util.spec_from_file_location("sample_data_fallback", _sample_path)
+    if _spec is None or _spec.loader is None:
+        raise ImportError(f"Cannot load sample_data fallback from {_sample_path}")
+    sample_data = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(sample_data)
 
 st.set_page_config(
     page_title="미국 증시 섹터 데시보드",
